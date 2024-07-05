@@ -35,8 +35,8 @@ const dtBaseNodePath = "/proc/device-tree"
 
 // Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
 func (b *pinctrlpi5) pinControlSetup() error {
-	nodePath, err := b.findGPIONodenodePath("gpio0") // this ("gpio") is hardcoded now, we will fix that later!
-	if nodePath == "NULL" || err != nil {
+	nodePath, err := b.findPathFromAlias("gpio0") // this ("gpio") is hardcoded now, we will fix that later!
+	if err != nil {
 		logging.Global().Debugw("error getting raspi5 GPIO nodePath", "error", err)
 	}
 
@@ -48,12 +48,12 @@ func (b *pinctrlpi5) pinControlSetup() error {
 }
 
 // We look in the 'aliases' node at the base of proc/device-tree to determine the full file path required to access our GPIO Chip
-func (b *pinctrlpi5) findGPIONodenodePath(nodeName string) (string, error) {
+func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
 
 	dtNodePath := dtBaseNodePath + "/aliases/" + nodeName
 	nodePathBytes, err := os.ReadFile(dtNodePath)
 	if err != nil {
-		return "NULL", fmt.Errorf("Error reading directory: %w", err)
+		return "", fmt.Errorf("Error reading directory: %w", err)
 	}
 
 	// convert readFile output from bytes -> string format
