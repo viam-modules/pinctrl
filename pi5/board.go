@@ -64,10 +64,6 @@ func newBoard(
 ) (board.Board, error) {
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
-	var physical_address uint64 = 0
-	var virtual_address uint64 = 0
-	var gpioMemIdx [4]rune
-
 	b := &pinctrlpi5{
 		Named:         conf.ResourceName().AsNamed(),
 		convertConfig: convertConfig,
@@ -82,10 +78,8 @@ func newBoard(
 
 		// store addresses + other stuff here
 		gpioNodePath: "",
-		memFD:        0,
-		physAddr:     &physical_address,
-		virtAddr:     &virtual_address,
-		gpioMemIdx:   gpioMemIdx,
+		physAddr:     INVALID_ADDR,
+		virtAddr:     INVALID_ADDR,
 	}
 	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
 		return nil, err
@@ -392,12 +386,10 @@ type pinctrlpi5 struct {
 	interrupts map[string]*digitalInterrupt
 
 	/* Custom PinCTRL Params Here: */
-	dtBaseNodePath string
-	memFD          int32
-	virtAddr       *uint64
-	physAddr       *uint64
-	gpioMemIdx     [4]rune
-	gpioNodePath   string
+	dtBaseNodePath string // file path referring to base of device tree: /proc/device-tree
+	gpioNodePath   string // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
+	virtAddr       uint64 // base address of mapped virtual page referencing the gpio chip data
+	physAddr       uint64 // base addres of the gpio chip data in dev/mem/
 
 	cancelCtx               context.Context
 	cancelFunc              func()

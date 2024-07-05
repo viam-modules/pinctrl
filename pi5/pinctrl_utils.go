@@ -12,19 +12,11 @@ import (
 	"strings"
 )
 
+// rangeInfo represents the info provided in the ranges property of a device tree. It provides a mapping between // registers in the child address space to the parent address space.
 type rangeInfo struct {
 	childAddr     uint64
 	parentAddr    uint64
 	addrSpaceSize uint64
-}
-
-type gpioChip struct {
-	name     string
-	dtNode   string
-	physAddr uint64
-	virtAddr uint64
-	chipSize uint32
-	// memfd     uint32
 }
 
 var INVALID_ADDR uint64 = math.MaxUint64
@@ -37,13 +29,15 @@ func (b *pinctrlpi5) pinControlSetup() error {
 	nodePath, err := b.findPathFromAlias(gpioName) // this ("gpio") is hardcoded now, we will fix that later!
 	if err != nil {
 		b.logger.Errorf("error getting raspi5 GPIO nodePath")
+		return err
 	}
 
 	err = b.setGPIONodePhysAddr(nodePath)
 	if err != nil {
 		b.logger.Errorf("error getting raspi5 GPIO physical address")
+		return err
 	}
-	return err
+	return nil
 }
 
 // We look in the 'aliases' node at the base of proc/device-tree to determine the full file path required to access our GPIO Chip
@@ -87,16 +81,19 @@ func getNumAddrSizeCellsInfo(parentNodePath string) (uint32, uint32, error) {
 	return numPAddrCells, numAddrSpaceCells, err
 }
 
+// removes nonprintable characters + other random characters from file path before opening files in device tree
+func cleanFilePath(childNodePath string) string {
+	childNodePath = strings.TrimSpace(childNodePath)
+	re := regexp.MustCompile(`[\x00-\x1F\x7F-\x9F]`) // gets rid of random non printable chars. works for now but make cleaner later
+	childNodePath = re.ReplaceAllString(childNodePath, "")
+	return childNodePath
+}
+
 // Reads the /reg file and converts the bytestream into a uint64 representing the GPIO Node's physical address within its parent's space. (pre address mapping)
 func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 
-	//newPath := "/proc/device-tree/axi/pcie@120000/rp1/gpio@d0000/reg"
-
 	childNodePath += "/reg"
-	childNodePath = strings.TrimSpace(childNodePath)
-
-	re := regexp.MustCompile(`[\x00-\x1F\x7F-\x9F]`) // gets rid of random non printable chars. works for now but make cleaner later
-	childNodePath = re.ReplaceAllString(childNodePath, "")
+	childNodePath = cleanFilePath(childNodePath)
 
 	regByteContents, err := os.ReadFile(childNodePath)
 	if err != nil {
@@ -104,11 +101,12 @@ func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 	}
 
 	physAddr := INVALID_ADDR
-	if numPAddrCells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+	switch numPAddrCells {
+	case 1: // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
 		physAddr = uint64(binary.BigEndian.Uint32(regByteContents[:(4 * numPAddrCells)]))
-	} else if numPAddrCells == 2 { // reading in 64 bits
+	case 2: // reading in 64 bits
 		physAddr = binary.BigEndian.Uint64(regByteContents[:(4 * numPAddrCells)])
-	} else { // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
+	case 3: // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
 		physAddr = binary.BigEndian.Uint64(regByteContents[(4 * (numPAddrCells - 2)):(4 * numPAddrCells)])
 	}
 	return physAddr, err
@@ -118,14 +116,12 @@ func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 func getRangesAddrInfo(childNodePath string, numCAddrCells uint32, numPAddrCells uint32, numAddrSpaceCells uint32) ([]rangeInfo, error) {
 
 	childNodePath += "/ranges"
-	childNodePath = strings.TrimSpace(childNodePath)
-	re := regexp.MustCompile(`[\x00-\x1F\x7F-\x9F]`) // gets rid of random non printable chars. works for now but make cleaner later. remvonig the -9F causes bugs.
-	childNodePath = re.ReplaceAllString(childNodePath, "")
-	var addrRangesSlice []rangeInfo
+	childNodePath = cleanFilePath(childNodePath)
+	var addrRanges []rangeInfo
 
 	rangeByteContents, err := os.ReadFile(childNodePath)
 	if err != nil {
-		return addrRangesSlice, fmt.Errorf("trouble getting reg addr info for %s: %w\n", childNodePath, err)
+		return addrRanges, fmt.Errorf("trouble getting reg addr info for %s: %w\n", childNodePath, err)
 	}
 
 	numRanges := uint32(len(rangeByteContents)) / (4 * (numCAddrCells + numPAddrCells + numAddrSpaceCells))
@@ -135,39 +131,42 @@ func getRangesAddrInfo(childNodePath string, numCAddrCells uint32, numPAddrCells
 		childAddr, parentAddr := INVALID_ADDR, INVALID_ADDR
 		addrSpaceSize := uint64(0)
 
-		if numCAddrCells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+		switch numCAddrCells {
+		case 1: // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
 			childAddr = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numCAddrCells)]))
-		} else if numCAddrCells == 2 { // reading in 64 bits
+		case 2: // reading in 64 bits
 			childAddr = binary.BigEndian.Uint64(rangeByteContents[:(4 * numCAddrCells)])
-		} else { // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
+		case 3: // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
 			childAddr = binary.BigEndian.Uint64(rangeByteContents[(4 * (numCAddrCells - 2)):(4 * numCAddrCells)])
 		}
 		rangeByteContents = rangeByteContents[(4 * numCAddrCells):] // flush the bytes already parsed out of the array
 
-		if numPAddrCells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+		switch numPAddrCells {
+		case 1: // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
 			parentAddr = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numPAddrCells)]))
-		} else if numPAddrCells == 2 { // reading in 64 bits
+		case 2: // reading in 64 bits
 			parentAddr = binary.BigEndian.Uint64(rangeByteContents[:(4 * numPAddrCells)])
-		} else { // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
+		case 3: // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
 			parentAddr = binary.BigEndian.Uint64(rangeByteContents[(4 * (numPAddrCells - 2)):(4 * numPAddrCells)])
 		}
 		rangeByteContents = rangeByteContents[(4 * numPAddrCells):]
 
-		if numAddrSpaceCells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+		switch numAddrSpaceCells {
+		case 1: // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
 			addrSpaceSize = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numAddrSpaceCells)]))
-		} else if numAddrSpaceCells == 2 { // reading in 64 bits
+		case 2: // reading in 64 bits
 			addrSpaceSize = binary.BigEndian.Uint64(rangeByteContents[:(4 * numAddrSpaceCells)])
-		} else { // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
+		case 3: // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
 			addrSpaceSize = binary.BigEndian.Uint64(rangeByteContents[(4 * (numAddrSpaceCells - 2)):(4 * numAddrSpaceCells)])
 		}
-
 		rangeByteContents = rangeByteContents[(4 * numAddrSpaceCells):]
+
 		rangeInfo := rangeInfo{childAddr: childAddr, parentAddr: parentAddr, addrSpaceSize: addrSpaceSize}
-		addrRangesSlice = append(addrRangesSlice, rangeInfo)
+		addrRanges = append(addrRanges, rangeInfo)
 
 	}
 
-	return addrRangesSlice, err
+	return addrRanges, err
 }
 
 // Uses Information Stored within the 'reg' property of the child node and 'ranges' property of its parents to map the child's physical address into the dev/gpiomem space
@@ -175,12 +174,12 @@ func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 
 	currNodePath := dtBaseNodePath + nodePath // initially: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
 	var numCAddrCells uint32 = 0
-	var err error = nil
+	var err error
 
 	/* Call Recursive Function to Calculate Phys Addr. Works way up the Device Tree, using the information
 	found in #ranges at every node to translate from the child's address space to the parent's address space
 	until we get the child's physical address in all of /dev/gpiomem. */
-	*b.physAddr, err = setGPIONodePhysAddrHelper(currNodePath, INVALID_ADDR, numCAddrCells)
+	b.physAddr, err = setGPIONodePhysAddrHelper(currNodePath, INVALID_ADDR, numCAddrCells)
 	if err != nil {
 		return fmt.Errorf("trouble calculating phys addr for %s: %w\n", nodePath, err)
 	}
@@ -202,7 +201,7 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 		return INVALID_ADDR, err
 	}
 
-	var addrRangesSlice []rangeInfo
+	var addrRanges []rangeInfo
 	if physAddress == INVALID_ADDR { // Case 1: We are the Child Node. No addr has been set. Read the reg file to get the physical address within our parents space.
 		physAddress, err = getRegAddr(currNodePath, numPAddrCells)
 		if err != nil {
@@ -210,12 +209,13 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 		}
 
 	} else { // Case 2: We use the ranges property to continue mapping a child addr into our parent addr space.
-		addrRangesSlice, err = getRangesAddrInfo(currNodePath, numCAddrCells, numPAddrCells, numAddrSpaceCells)
+		addrRanges, err = getRangesAddrInfo(currNodePath, numCAddrCells, numPAddrCells, numAddrSpaceCells)
 		if err != nil {
 			return INVALID_ADDR, err
 		}
 
-		for _, addrRange := range addrRangesSlice {
+		// getRangesAddrInfo returns a list of all possible child address ranges our physical address can fall into. We must see which range to use, so that we can map our physical address into the correct parent address range.
+		for _, addrRange := range addrRanges {
 
 			if addrRange.childAddr <= physAddress && physAddress <= addrRange.childAddr+addrRange.addrSpaceSize {
 				physAddress -= addrRange.childAddr  // get the offset beween the address and child base address
