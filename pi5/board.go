@@ -32,17 +32,17 @@ import (
 const dtBaseNodePath = "/proc/device-tree"
 
 type rangeInfo struct {
-	child_addr  uint64
-	parent_addr uint64
-	parent_size uint64
+	childAddr     uint64
+	parentAddr    uint64
+	addrSpaceSize uint64
 }
 
 type gpioChip struct {
-	name      string
-	dtNode    string
-	phys_addr uint64
-	virt_addr uint64
-	chipSize  uint32
+	name     string
+	dtNode   string
+	physAddr uint64
+	virtAddr uint64
+	chipSize uint32
 	// memfd     uint32
 }
 
@@ -63,59 +63,62 @@ func init() {
 }
 
 // Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
-func pinControlSetup() (string, uint64) {
-	alias, err := findGPIONodeAlias("gpio0", dtBaseNodePath) // this ("gpio") is hardcoded now, we will fix that later!
-	if alias == "NULL" || err != nil {
-		logging.Global().Debugw("Error getting raspi5 GPIO Alias", "error", err)
+func (b *pinctrlpi5) pinControlSetup() error {
+	nodePath, err := b.findGPIONodenodePath("gpio0") // this ("gpio") is hardcoded now, we will fix that later!
+	if nodePath == "NULL" || err != nil {
+		logging.Global().Debugw("error getting raspi5 GPIO nodePath", "error", err)
 	}
-	gpioPhysMemAddress := getGPIONodePhysAddr(alias)
-	return alias, gpioPhysMemAddress
+
+	err = b.setGPIONodePhysAddr(nodePath)
+	if err != nil {
+		logging.Global().Debugw("error getting raspi5 GPIO physical address", "error", err)
+	}
+	return err
 }
 
 // We look in the 'aliases' node at the base of proc/device-tree to determine the full file path required to access our GPIO Chip
-func findGPIONodeAlias(nodeName string, dtBaseNodePath string) (string, error) {
+func (b *pinctrlpi5) findGPIONodenodePath(nodeName string) (string, error) {
 
 	dtNodePath := dtBaseNodePath + "/aliases/" + nodeName
-	alias, err := os.ReadFile(dtNodePath)
+	nodePathBytes, err := os.ReadFile(dtNodePath)
 	if err != nil {
-		fmt.Println("Error reading directory:", err)
-		return "NULL", err
+		return "NULL", fmt.Errorf("Error reading directory: %w", err)
 	}
 
 	// convert readFile output from bytes -> string format
-	alias_path := fmt.Sprintf("%s", alias)
-	return alias_path, err
+	nodePath := fmt.Sprintf("%s", nodePathBytes)
+	return nodePath, err
 }
 
 /*
-A child Node will call this method ON ITS PARENT to determine how many cells denote parent address, child address, parent size when
+A child Node will call this method ON ITS PARENT to determine how many cells denote parent address, child address, addr space size when
 reading its ranges or reg properties.
 
 returns:
 
-	num_paddr_cells:	number of 32 bit chunks needed to represent the parent address
-	num_psize_cells:	number of 32 bit chunks needed to represent the size of the parent address space
+	numPAddrCells:	number of 32 bit chunks needed to represent the parent address
+	numAddrSpaceCells:	number of 32 bit chunks needed to represent the size of the parent address space
 */
-func getNumAddrSizeCellsInfo(parentNodePath string) (uint32, uint32) {
+func getNumAddrSizeCellsInfo(parentNodePath string) (uint32, uint32, error) {
 
 	// get #address - cells info for child node using the parent Node
 	npaByteContents, err := os.ReadFile(parentNodePath + "/#address-cells")
 	if err != nil {
-		fmt.Printf("Trouble getting addr cells info for %s\n", parentNodePath)
+		return 0, 0, fmt.Errorf("trouble getting addr cells info for %s: %w\n", parentNodePath, err)
 	}
-	num_paddr_cells := binary.BigEndian.Uint32(npaByteContents[:4])
+	numPAddrCells := binary.BigEndian.Uint32(npaByteContents[:4])
 
 	// get #size - cells info for child node using the parent Node
 	npsByteContents, err := os.ReadFile(parentNodePath + "/#size-cells")
 	if err != nil {
-		fmt.Printf("Trouble getting size cells info for %s \n", parentNodePath)
+		return 0, 0, fmt.Errorf("trouble getting size cells info for %s: %w\n", parentNodePath, err)
 	}
-	num_psize_cells := binary.BigEndian.Uint32(npsByteContents[:4]) // reading 4 bytes because the number is represented by 1 uint32. 4bytes * 8bits/byte = 32 bits
-	return num_paddr_cells, num_psize_cells
+	numAddrSpaceCells := binary.BigEndian.Uint32(npsByteContents[:4]) // reading 4 bytes because the number is represented by 1 uint32. 4bytes * 8bits/byte = 32 bits
+	return numPAddrCells, numAddrSpaceCells, err
 }
 
 // Reads the /reg file and converts the bytestream into a uint64 representing the GPIO Node's physical address within its parent's space. (pre address mapping)
-func getRegAddr(childNodePath string, num_paddr_cells uint32) uint64 {
+func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 
 	//newPath := "/proc/device-tree/axi/pcie@120000/rp1/gpio@d0000/reg"
 
@@ -127,119 +130,134 @@ func getRegAddr(childNodePath string, num_paddr_cells uint32) uint64 {
 
 	regByteContents, err := os.ReadFile(childNodePath)
 	if err != nil {
-		fmt.Printf("trouble getting reg addr info for %s\n", childNodePath)
+		return INVALID_ADDR, fmt.Errorf("trouble getting reg addr info for %s: %w\n", childNodePath, err)
 	}
 
-	phys_addr := INVALID_ADDR
-	if num_paddr_cells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
-		phys_addr = uint64(binary.BigEndian.Uint32(regByteContents[:(4 * num_paddr_cells)]))
-	} else if num_paddr_cells == 2 { // reading in 64 bits
-		phys_addr = binary.BigEndian.Uint64(regByteContents[:(4 * num_paddr_cells)])
+	physAddr := INVALID_ADDR
+	if numPAddrCells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+		physAddr = uint64(binary.BigEndian.Uint32(regByteContents[:(4 * numPAddrCells)]))
+	} else if numPAddrCells == 2 { // reading in 64 bits
+		physAddr = binary.BigEndian.Uint64(regByteContents[:(4 * numPAddrCells)])
 	} else { // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
-		phys_addr = binary.BigEndian.Uint64(regByteContents[(4 * (num_paddr_cells - 2)):(4 * num_paddr_cells)])
+		physAddr = binary.BigEndian.Uint64(regByteContents[(4 * (numPAddrCells - 2)):(4 * numPAddrCells)])
 	}
-
-	//fmt.Printf("reg phys addr: %d\n", phys_addr)
-	return phys_addr
+	return physAddr, err
 }
 
 // Reads the /ranges file and converts the bytestream into integers representing the < child address parent address parent size >
-func getRangesAddrInfo(childNodePath string, num_caddr_cells uint32, num_paddr_cells uint32, num_psize_cells uint32) []rangeInfo {
+func getRangesAddrInfo(childNodePath string, numCAddrCells uint32, numPAddrCells uint32, numAddrSpaceCells uint32) ([]rangeInfo, error) {
 
 	childNodePath += "/ranges"
 	childNodePath = strings.TrimSpace(childNodePath)
 	re := regexp.MustCompile(`[\x00-\x1F\x7F-\x9F]`) // gets rid of random non printable chars. works for now but make cleaner later. remvonig the -9F causes bugs.
 	childNodePath = re.ReplaceAllString(childNodePath, "")
+	var addrRangesSlice []rangeInfo
 
 	rangeByteContents, err := os.ReadFile(childNodePath)
 	if err != nil {
-		fmt.Printf("trouble getting range addr info for %s\n", childNodePath)
+		return addrRangesSlice, fmt.Errorf("trouble getting reg addr info for %s: %w\n", childNodePath, err)
 	}
 
-	numRanges := uint32(len(rangeByteContents)) / (4 * (num_caddr_cells + num_paddr_cells + num_psize_cells))
-	var addrRangesSlice []rangeInfo
+	numRanges := uint32(len(rangeByteContents)) / (4 * (numCAddrCells + numPAddrCells + numAddrSpaceCells))
 
 	for i := uint32(0); i < numRanges; i++ {
 
-		child_addr, parent_addr := INVALID_ADDR, INVALID_ADDR
-		parent_size := uint64(0)
+		childAddr, parentAddr := INVALID_ADDR, INVALID_ADDR
+		addrSpaceSize := uint64(0)
 
-		if num_caddr_cells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
-			child_addr = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * num_caddr_cells)]))
-		} else if num_caddr_cells == 2 { // reading in 64 bits
-			child_addr = binary.BigEndian.Uint64(rangeByteContents[:(4 * num_caddr_cells)])
+		if numCAddrCells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+			childAddr = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numCAddrCells)]))
+		} else if numCAddrCells == 2 { // reading in 64 bits
+			childAddr = binary.BigEndian.Uint64(rangeByteContents[:(4 * numCAddrCells)])
 		} else { // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
-			child_addr = binary.BigEndian.Uint64(rangeByteContents[(4 * (num_caddr_cells - 2)):(4 * num_caddr_cells)])
+			childAddr = binary.BigEndian.Uint64(rangeByteContents[(4 * (numCAddrCells - 2)):(4 * numCAddrCells)])
 		}
-		rangeByteContents = rangeByteContents[(4 * num_caddr_cells):] // flush the bytes already parsed out of the array
+		rangeByteContents = rangeByteContents[(4 * numCAddrCells):] // flush the bytes already parsed out of the array
 
-		if num_paddr_cells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
-			parent_addr = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * num_paddr_cells)]))
-		} else if num_paddr_cells == 2 { // reading in 64 bits
-			parent_addr = binary.BigEndian.Uint64(rangeByteContents[:(4 * num_paddr_cells)])
+		if numPAddrCells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+			parentAddr = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numPAddrCells)]))
+		} else if numPAddrCells == 2 { // reading in 64 bits
+			parentAddr = binary.BigEndian.Uint64(rangeByteContents[:(4 * numPAddrCells)])
 		} else { // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
-			parent_addr = binary.BigEndian.Uint64(rangeByteContents[(4 * (num_paddr_cells - 2)):(4 * num_paddr_cells)])
+			parentAddr = binary.BigEndian.Uint64(rangeByteContents[(4 * (numPAddrCells - 2)):(4 * numPAddrCells)])
 		}
-		rangeByteContents = rangeByteContents[(4 * num_paddr_cells):]
+		rangeByteContents = rangeByteContents[(4 * numPAddrCells):]
 
-		if num_psize_cells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
-			parent_size = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * num_psize_cells)]))
-		} else if num_psize_cells == 2 { // reading in 64 bits
-			parent_size = binary.BigEndian.Uint64(rangeByteContents[:(4 * num_psize_cells)])
+		if numAddrSpaceCells == 1 { // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+			addrSpaceSize = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numAddrSpaceCells)]))
+		} else if numAddrSpaceCells == 2 { // reading in 64 bits
+			addrSpaceSize = binary.BigEndian.Uint64(rangeByteContents[:(4 * numAddrSpaceCells)])
 		} else { // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
-			parent_size = binary.BigEndian.Uint64(rangeByteContents[(4 * (num_psize_cells - 2)):(4 * num_psize_cells)])
+			addrSpaceSize = binary.BigEndian.Uint64(rangeByteContents[(4 * (numAddrSpaceCells - 2)):(4 * numAddrSpaceCells)])
 		}
 
-		rangeByteContents = rangeByteContents[(4 * num_psize_cells):]
-		rangeInfo := rangeInfo{child_addr: child_addr, parent_addr: parent_addr, parent_size: parent_size}
-		// fmt.Printf("adding range info %x, %x, %x \n", rangeInfo.child_addr, rangeInfo.parent_addr, rangeInfo.parent_size)
+		rangeByteContents = rangeByteContents[(4 * numAddrSpaceCells):]
+		rangeInfo := rangeInfo{childAddr: childAddr, parentAddr: parentAddr, addrSpaceSize: addrSpaceSize}
 		addrRangesSlice = append(addrRangesSlice, rangeInfo)
 
 	}
 
-	return addrRangesSlice
+	return addrRangesSlice, err
 }
 
 // Uses Information Stored within the 'reg' property of the child node and 'ranges' property of its parents to map the child's physical address into the dev/gpiomem space
-func getGPIONodePhysAddr(alias string) uint64 {
+func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 
-	currNodePath := dtBaseNodePath + alias // initially: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
-	var num_caddr_cells uint32 = 0
+	currNodePath := dtBaseNodePath + nodePath // initially: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
+	var numCAddrCells uint32 = 0
+	var err error = nil
 
 	/* Call Recursive Function to Calculate Phys Addr. Works way up the Device Tree, using the information
 	found in #ranges at every node to translate from the child's address space to the parent's address space
 	until we get the child's physical address in all of /dev/gpiomem. */
-	return getGPIONodePhysAddrHelper(currNodePath, INVALID_ADDR, num_caddr_cells)
+	*b.physAddr, err = setGPIONodePhysAddrHelper(currNodePath, INVALID_ADDR, numCAddrCells)
+	if err != nil {
+		return fmt.Errorf("trouble calculating phys addr for %s: %w\n", nodePath, err)
+	}
+
+	return nil
 }
 
 // Recursively Traverses Device Tree to Calcuate Physical Address of specified GPIO Chip
-func getGPIONodePhysAddrHelper(currNodePath string, phys_address uint64, num_caddr_cells uint32) uint64 {
+func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddrCells uint32) (uint64, error) {
 
 	if currNodePath == dtBaseNodePath { // Base Case: We are at the root of the device tree.
-		return phys_address
+		return physAddress, nil
 	}
 
 	// Normal Case: We are not at the root of the device tree. We must continue mapping our child addr (from the previous call) to this parent's addr space.
 	parentNodePath := filepath.Dir(currNodePath)
-	num_paddr_cells, num_psize_cells := getNumAddrSizeCellsInfo(parentNodePath)
+	numPAddrCells, numAddrSpaceCells, err := getNumAddrSizeCellsInfo(parentNodePath)
+	if err != nil {
+		return INVALID_ADDR, err
+	}
 
-	if phys_address == INVALID_ADDR { // Case 1: We are the Child Node. No addr has been set. Read the reg file to get the physical address within our parents space.
-		phys_address = getRegAddr(currNodePath, num_paddr_cells)
+	var addrRangesSlice []rangeInfo
+	if physAddress == INVALID_ADDR { // Case 1: We are the Child Node. No addr has been set. Read the reg file to get the physical address within our parents space.
+		physAddress, err = getRegAddr(currNodePath, numPAddrCells)
+		if err != nil {
+			return INVALID_ADDR, err
+		}
+
 	} else { // Case 2: We use the ranges property to continue mapping a child addr into our parent addr space.
-		addrRangesSlice := getRangesAddrInfo(currNodePath, num_caddr_cells, num_paddr_cells, num_psize_cells)
+		addrRangesSlice, err = getRangesAddrInfo(currNodePath, numCAddrCells, numPAddrCells, numAddrSpaceCells)
+		if err != nil {
+			return INVALID_ADDR, err
+		}
+
 		for _, addrRange := range addrRangesSlice {
 
-			if addrRange.child_addr <= phys_address && phys_address <= addrRange.child_addr+addrRange.parent_size {
-				phys_address -= addrRange.child_addr  // get the offset beween the address and child base address
-				phys_address += addrRange.parent_addr // now address has been mapped into parent space.
+			if addrRange.childAddr <= physAddress && physAddress <= addrRange.childAddr+addrRange.addrSpaceSize {
+				physAddress -= addrRange.childAddr  // get the offset beween the address and child base address
+				physAddress += addrRange.parentAddr // now address has been mapped into parent space.
 				break
 			}
 		}
 	}
 
-	num_caddr_cells = num_paddr_cells
+	numCAddrCells = numPAddrCells
 	currNodePath = parentNodePath
-	return getGPIONodePhysAddrHelper(currNodePath, phys_address, num_caddr_cells)
+	return setGPIONodePhysAddrHelper(currNodePath, physAddress, numCAddrCells)
 }
 
 // RegisterBoard registers a sysfs based board of the given model.
@@ -271,7 +289,7 @@ func newBoard(
 
 	var physical_address uint64 = 0
 	var virtual_address uint64 = 0
-	var gpiomem_idx [4]rune
+	var gpioMemIdx [4]rune
 
 	b := &pinctrlpi5{
 		Named:         conf.ResourceName().AsNamed(),
@@ -287,19 +305,18 @@ func newBoard(
 
 		// store addresses + other stuff here
 		gpioNodePath: "",
-		mem_fd:       0,
-		phys_addr:    &physical_address,
-		virt_addr:    &virtual_address,
-		gpiomem_idx:  gpiomem_idx,
+		memFD:        0,
+		physAddr:     &physical_address,
+		virtAddr:     &virtual_address,
+		gpioMemIdx:   gpioMemIdx,
 	}
 	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
 		return nil, err
 	}
 
-	// gpioNodePath, phys_addr := pinControlSetup()
-	// b.gpioNodePath = gpioNodePath
-	// b.phys_addr = &phys_addr
-
+	if err := b.pinControlSetup(); err != nil {
+		return nil, err
+	}
 	return b, nil
 }
 
@@ -599,10 +616,10 @@ type pinctrlpi5 struct {
 
 	/* Custom PinCTRL Params Here: */
 	dtBaseNodePath string
-	mem_fd         int32
-	virt_addr      *uint64
-	phys_addr      *uint64
-	gpiomem_idx    [4]rune
+	memFD          int32
+	virtAddr       *uint64
+	physAddr       *uint64
+	gpioMemIdx     [4]rune
 	gpioNodePath   string
 
 	cancelCtx               context.Context
@@ -755,41 +772,3 @@ func (b *pinctrlpi5) Close(ctx context.Context) error {
 	}
 	return err
 }
-
-/*CODE DUMP
-
-// var gpioChip gpioChip
-	// gpioChip.name = "gpio0"
-	// gpioChip.dtNode = alias
-	// gpioChip.phys_addr = gpioPhysMemAddress
-	// gpioChip.virt_addr = INVALID_ADDR // we will set this later
-	// gpioChip.chipSize = 0x30000
-
-	// memPath := "/dev/gpiomem0"
-	// flags := os.O_RDWR | os.O_SYNC
-
-	// Open the file with the specified flags and set permissions to read and write
-	// file, err := os.OpenFile(memPath, flags, 0666)
-	// if err != nil {
-	// 	fmt.Printf("Error opening file: %v\n", err)
-	// 	return
-	// }
-	// pageSize := uint32(syscall.Getpagesize())
-	// align := uint32(gpioPhysMemAddress) & (pageSize - 1)
-
-	// mem, err := syscall.Mmap(int(file.Fd()), int64(align), int(gpioChip.chipSize+pageSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	// if err != nil {
-	// 	fmt.Printf("Failed to mmap: %v\n", err)
-	// 	return
-	// }
-	// defer syscall.Munmap(mem)
-
-	// if file != nil {
-	// 	file.Close()
-	// }
-
-
-
-
-
-*/
