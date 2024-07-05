@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"go.viam.com/rdk/logging"
 )
 
 type rangeInfo struct {
@@ -37,12 +35,12 @@ const dtBaseNodePath = "/proc/device-tree"
 func (b *pinctrlpi5) pinControlSetup() error {
 	nodePath, err := b.findPathFromAlias("gpio0") // this ("gpio") is hardcoded now, we will fix that later!
 	if err != nil {
-		logging.Global().Debugw("error getting raspi5 GPIO nodePath", "error", err)
+		b.logger.Errorf("error getting raspi5 GPIO nodePath")
 	}
 
 	err = b.setGPIONodePhysAddr(nodePath)
 	if err != nil {
-		logging.Global().Debugw("error getting raspi5 GPIO physical address", "error", err)
+		b.logger.Errorf("error getting raspi5 GPIO physical address")
 	}
 	return err
 }
