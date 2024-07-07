@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 )
 
 // rangeInfo represents the info provided in the ranges property of a device tree. It provides a mapping between // registers in the child address space to the parent address space.
@@ -22,6 +23,7 @@ type rangeInfo struct {
 var INVALID_ADDR uint64 = math.MaxUint64
 
 const gpioName = "gpio0"
+const gpioMemPath = "/dev/gpiomem0"
 const dtBaseNodePath = "/proc/device-tree"
 
 // Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
@@ -37,6 +39,13 @@ func (b *pinctrlpi5) pinControlSetup() error {
 		b.logger.Errorf("error getting raspi5 GPIO physical address")
 		return err
 	}
+
+	err = b.createGPIOVPage(gpioMemPath)
+	if err != nil {
+		b.logger.Errorf("error creating virtual page from GPIO physical address")
+		return err
+	}
+
 	return nil
 }
 
@@ -228,4 +237,36 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 	numCAddrCells = numPAddrCells
 	currNodePath = parentNodePath
 	return setGPIONodePhysAddrHelper(currNodePath, physAddress, numCAddrCells)
+}
+
+func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
+
+	fileFlags := os.O_RDWR | os.O_SYNC
+	memFile, err := os.OpenFile(memPath, fileFlags, 0666) // 0666 is an octal representation of: file is readable / writeable by anyone
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %w\n", memPath, err)
+	}
+
+	//bytesOutput, err := os.ReadFile(memFile.Name())
+	//fmt.Printf("bytes output %x \n", bytesOutput)
+
+	pageSize := int64(syscall.Getpagesize())
+	pageStartAddr := int64(b.physAddr) & (pageSize - 1)
+	pageOffset := int(b.physAddr) - int(pageStartAddr)
+
+	mapProtFlags := int(syscall.PROT_READ | syscall.PROT_WRITE) // memory protection flags for mmap()
+	mapShareFlags := int(syscall.MAP_SHARED)                    // changes to this flag are shared across forked processes
+
+	vPage, err := syscall.Mmap(int(memFile.Fd()), pageStartAddr, pageOffset+int(b.chipSize), mapProtFlags, mapShareFlags)
+	if err != nil {
+		return fmt.Errorf("failed to mmap: %w\n", err)
+	}
+
+	// Obtain the virtual address
+	gpioVPageBytes := vPage[pageOffset : pageOffset+int(b.chipSize)]
+	fmt.Printf("bytes output %x \n", gpioVPageBytes)
+
+	//b.virtAddr = binary.BigEndian.Uint64(&gpioMap[0]) // The virtual address points to the first byte representing the chip's base address. Take the first 8 bytes as
+
+	return err
 }

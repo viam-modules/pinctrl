@@ -80,6 +80,7 @@ func newBoard(
 		gpioNodePath: "",
 		physAddr:     INVALID_ADDR,
 		virtAddr:     INVALID_ADDR,
+		chipSize:     0x3000,
 	}
 	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
 		return nil, err
@@ -390,6 +391,7 @@ type pinctrlpi5 struct {
 	gpioNodePath   string // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
 	virtAddr       uint64 // base address of mapped virtual page referencing the gpio chip data
 	physAddr       uint64 // base addres of the gpio chip data in dev/mem/
+	chipSize       uint64 // length of chip's address space in memory
 
 	cancelCtx               context.Context
 	cancelFunc              func()
