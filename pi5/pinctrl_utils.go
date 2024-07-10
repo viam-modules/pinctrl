@@ -48,8 +48,9 @@ func (b *pinctrlpi5) pinControlSetup() error {
 		b.logger.Errorf("error creating virtual page from GPIO physical address")
 		return err
 	}
+	defer b.pinControlMemoryCleanup()
 
-	return nil
+	return err
 }
 
 // We look in the 'aliases' node at the base of proc/device-tree to determine the full file path required to access our GPIO Chip
@@ -244,32 +245,43 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 
 // Creates a virtual Page to access/manipulate memory related to gpiochip data
 func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
+	var err error
 
+	// Open the 'file' you are trying to map. Note: /dev/gpiomem0 is an alias, so it's file length returns 0
 	fileFlags := os.O_RDWR | os.O_SYNC
-	memFile, err := os.OpenFile("/dev/gpiomem0", fileFlags, 0755) // 0666 is an octal representation of: file is readable / writeable by anyone
+	b.memFile, err = os.OpenFile("/dev/gpiomem0", fileFlags, 0666) // 0666 is an octal representation of: file is readable / writeable by anyone
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %w\n", memPath, err)
 	}
-	defer memFile.Close()
 
 	pageSize := uint64(syscall.Getpagesize())
 	pageOffset := b.physAddr & (pageSize - 1) // difference between base address of the page and the address we're actually tring to access
 	//pageStartAddr := int64(b.physAddr - pageOffset) // base address of the page. needed when we can't open dev/gpiomem0
 	lenMapping := int(pageOffset) + int(b.chipSize) // total amount of memory needed to be mapped. + pageoffset is because we're starting from the base address of the page, not our actual physical address
 
-	// important: syscall flag values are not the same as mmap library flags
-	vPage, err := mmap.MapRegion(memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from base address pointing to /gpiomem0
+	vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from base address pointing to /gpiomem0
 	if err != nil {
 		if err == syscall.ENOMEM {
 			return fmt.Errorf("failed to mmap: cannot allocate memory for mmap call %w", err)
 		}
 		return fmt.Errorf("failed to mmap: %w\n", err)
 	}
-	defer vPage.Unmap()
 
-	virtAddr := unsafe.Pointer(&vPage[0]) // we can't directly assign something of type Pointer to *uint64
-	b.virtAddr = (*uint64)(virtAddr)
-
-	fmt.Printf("vpage addr %x\n", *b.virtAddr)
+	tempVirtAddr := unsafe.Pointer(&vPage[0]) // we can't directly assign something of type Pointer to *uint64 in one line of code
+	b.virtAddr = (*uint64)(tempVirtAddr)
 	return err
+}
+
+// Cleans up mapped memory / files upon error
+func (b *pinctrlpi5) pinControlMemoryCleanup() error {
+
+	if err := b.vPage.Unmap(); err != nil {
+		return fmt.Errorf("Error during unmap: %w", err)
+	}
+
+	if err := b.memFile.Close(); err != nil {
+		return fmt.Errorf("Error during memFile closing: %w", err)
+	}
+
+	return nil
 }
