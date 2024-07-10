@@ -10,10 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
-	"unsafe"
-
-	mmap "github.com/edsrzf/mmap-go"
 )
 
 // rangeInfo represents the info provided in the ranges property of a device tree. It provides a mapping between // registers in the child address space to the parent address space.
@@ -26,7 +22,6 @@ type rangeInfo struct {
 var INVALID_ADDR uint64 = uint64(math.NaN())
 
 const gpioName = "gpio0"
-const gpioMemPath = "/dev/gpiomem0"
 const dtBaseNodePath = "/proc/device-tree"
 
 // Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
@@ -42,13 +37,6 @@ func (b *pinctrlpi5) pinControlSetup() error {
 		b.logger.Errorf("error getting raspi5 GPIO physical address")
 		return err
 	}
-
-	err = b.createGPIOVPage(gpioMemPath)
-	if err != nil {
-		b.logger.Errorf("error creating virtual page from GPIO physical address")
-		return err
-	}
-
 	return nil
 }
 
@@ -240,89 +228,4 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 	numCAddrCells = numPAddrCells
 	currNodePath = parentNodePath
 	return setGPIONodePhysAddrHelper(currNodePath, physAddress, numCAddrCells)
-}
-
-func printMemoryContents(addr []byte) {
-	for i, b := range addr {
-		fmt.Printf("Byte %d: 0x%02x\n", i, b)
-	}
-}
-
-func testVPage() {
-	fmt.Printf("hey\n")
-	f, _ := os.OpenFile("./file", os.O_RDWR, 0644)
-	defer f.Close()
-
-	mmap, _ := mmap.Map(f, mmap.RDWR, 0)
-	defer mmap.Unmap()
-	fmt.Println(string(mmap))
-
-	mmap[0] = 'X'
-	mmap.Flush()
-	fmt.Println(string(mmap))
-}
-
-// An mmapData is mmap'ed read-only data from a file.
-type mmapData struct {
-	f *os.File
-	d []byte
-}
-
-func testVPage2(f *os.File) (mmapData, error) {
-	st, err := f.Stat()
-	if err != nil {
-		return mmapData{nil, nil}, err
-	}
-	size := st.Size()
-	if int64(int(size+4095)) != size+4095 {
-		fmt.Printf("%s: too large for mmap", f.Name())
-	}
-	n := 0x30000
-	if n == 0 {
-		return mmapData{f, nil}, nil
-	}
-	data, err := syscall.Mmap(int(f.Fd()), 0, n, syscall.PROT_READ, syscall.MAP_SHARED)
-	if err != nil {
-		fmt.Printf("mmap %s: %v", f.Name(), err)
-	}
-	return mmapData{f, data[:n]}, err
-}
-
-func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
-
-	fileFlags := os.O_RDWR | os.O_SYNC
-	memFile, err := os.OpenFile("/dev/gpiomem0", fileFlags, 0755) // 0666 is an octal representation of: file is readable / writeable by anyone
-	if err != nil {
-		return fmt.Errorf("failed to open %s: %w\n", memPath, err)
-	}
-	defer memFile.Close()
-
-	pageSize := uint64(syscall.Getpagesize())
-	pageOffset := b.physAddr & (pageSize - 1)       // difference between base address of the page and the address we're actually tring to access
-	pageStartAddr := int64(b.physAddr - pageOffset) // base address of the page
-	lenMapping := int(pageOffset) + int(b.chipSize) // total amount of memory needed to be mapped. + pageoffset is because we're starting from the base address of the page, not our actual physical address
-
-	// syscall flag values are not the same as mmap library flags
-	mapProtFlags := int(syscall.PROT_READ | syscall.PROT_WRITE) // memory protection flags for mmap()
-	mapShareFlags := int(syscall.MAP_SHARED)                    // changes to this flag are shared across forked processes
-
-	fmt.Printf("Physical address: 0x%X, Aligned address: 0x%X, Offset: 0x%X\n", b.physAddr, pageStartAddr, pageOffset)
-
-	fmt.Printf("map prot flags = %d  vs %d \n", mapProtFlags, mmap.RDWR)
-	fmt.Printf("map share flags = %d vs %d \n", mapShareFlags, 0)
-
-	vPage, err := mmap.MapRegion(memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from base address pointing to /gpiomem0
-	if err != nil {
-		if err == syscall.ENOMEM {
-			fmt.Println("cannot allocate memory")
-		}
-		return fmt.Errorf("failed to mmap: %w\n", err)
-	}
-	defer vPage.Unmap()
-
-	virtAddr := unsafe.Pointer(&vPage[0]) // we can't directly assign something of type Pointer to *uint64
-	b.virtAddr = (*uint64)(virtAddr)
-
-	fmt.Printf("vpage addr %x\n", *b.virtAddr)
-	return err
 }

@@ -79,8 +79,7 @@ func newBoard(
 		// store addresses + other stuff here
 		gpioNodePath: "",
 		physAddr:     INVALID_ADDR,
-		virtAddr:     &INVALID_ADDR,
-		chipSize:     0x30000,
+		virtAddr:     INVALID_ADDR,
 	}
 	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
 		return nil, err
@@ -387,11 +386,10 @@ type pinctrlpi5 struct {
 	interrupts map[string]*digitalInterrupt
 
 	/* Custom PinCTRL Params Here: */
-	dtBaseNodePath string  // file path referring to base of device tree: /proc/device-tree
-	gpioNodePath   string  // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
-	virtAddr       *uint64 // base address of mapped virtual page referencing the gpio chip data
-	physAddr       uint64  // base addres of the gpio chip data in dev/mem/
-	chipSize       uint64  // length of chip's address space in memory
+	dtBaseNodePath string // file path referring to base of device tree: /proc/device-tree
+	gpioNodePath   string // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
+	virtAddr       uint64 // base address of mapped virtual page referencing the gpio chip data
+	physAddr       uint64 // base addres of the gpio chip data in dev/mem/
 
 	cancelCtx               context.Context
 	cancelFunc              func()
