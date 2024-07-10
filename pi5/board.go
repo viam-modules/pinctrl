@@ -78,8 +78,6 @@ func newBoard(
 
 		// store addresses + other stuff here
 		gpioNodePath: "",
-		physAddr:     INVALID_ADDR,
-		virtAddr:     INVALID_ADDR,
 	}
 	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
 		return nil, err
