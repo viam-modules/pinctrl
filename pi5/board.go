@@ -64,10 +64,6 @@ func newBoard(
 ) (board.Board, error) {
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
-	var physical_address uint64 = 0
-	var virtual_address uint64 = 0
-	var gpiomem_idx [4]rune
-
 	b := &pinctrlpi5{
 		Named:         conf.ResourceName().AsNamed(),
 		convertConfig: convertConfig,
@@ -82,15 +78,14 @@ func newBoard(
 
 		// store addresses + other stuff here
 		gpioNodePath: "",
-		mem_fd:       0,
-		phys_addr:    &physical_address,
-		virt_addr:    &virtual_address,
-		gpiomem_idx:  gpiomem_idx,
 	}
 	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
 		return nil, err
 	}
 
+	if err := b.pinControlSetup(); err != nil {
+		return nil, err
+	}
 	return b, nil
 }
 
@@ -389,12 +384,10 @@ type pinctrlpi5 struct {
 	interrupts map[string]*digitalInterrupt
 
 	/* Custom PinCTRL Params Here: */
-	dtBaseNodePath string
-	mem_fd         int32
-	virt_addr      *uint64
-	phys_addr      *uint64
-	gpiomem_idx    [4]rune
-	gpioNodePath   string
+	dtBaseNodePath string // file path referring to base of device tree: /proc/device-tree
+	gpioNodePath   string // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
+	virtAddr       uint64 // base address of mapped virtual page referencing the gpio chip data
+	physAddr       uint64 // base addres of the gpio chip data in dev/mem/
 
 	cancelCtx               context.Context
 	cancelFunc              func()
@@ -546,41 +539,3 @@ func (b *pinctrlpi5) Close(ctx context.Context) error {
 	}
 	return err
 }
-
-/*CODE DUMP
-
-// var gpioChip gpioChip
-	// gpioChip.name = "gpio0"
-	// gpioChip.dtNode = alias
-	// gpioChip.phys_addr = gpioPhysMemAddress
-	// gpioChip.virt_addr = INVALID_ADDR // we will set this later
-	// gpioChip.chipSize = 0x30000
-
-	// memPath := "/dev/gpiomem0"
-	// flags := os.O_RDWR | os.O_SYNC
-
-	// Open the file with the specified flags and set permissions to read and write
-	// file, err := os.OpenFile(memPath, flags, 0666)
-	// if err != nil {
-	// 	fmt.Printf("Error opening file: %v\n", err)
-	// 	return
-	// }
-	// pageSize := uint32(syscall.Getpagesize())
-	// align := uint32(gpioPhysMemAddress) & (pageSize - 1)
-
-	// mem, err := syscall.Mmap(int(file.Fd()), int64(align), int(gpioChip.chipSize+pageSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	// if err != nil {
-	// 	fmt.Printf("Failed to mmap: %v\n", err)
-	// 	return
-	// }
-	// defer syscall.Munmap(mem)
-
-	// if file != nil {
-	// 	file.Close()
-	// }
-
-
-
-
-
-*/
