@@ -125,6 +125,8 @@ func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 	return physAddr, err
 }
 
+//
+
 // Reads the /ranges file and converts the bytestream into integers representing the < child address parent address parent size >
 func getRangesAddrInfo(childNodePath string, numCAddrCells uint32, numPAddrCells uint32, numAddrSpaceCells uint32) ([]rangeInfo, error) {
 
@@ -255,8 +257,7 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	}
 
 	pageSize := uint64(syscall.Getpagesize())
-	pageOffset := b.physAddr & (pageSize - 1) // difference between base address of the page and the address we're actually tring to access
-	//pageStartAddr := int64(b.physAddr - pageOffset) // base address of the page. needed when we can't open dev/gpiomem0
+	pageOffset := b.physAddr & (pageSize - 1)       // difference between base address of the page and the address we're actually tring to access
 	lenMapping := int(pageOffset) + int(b.chipSize) // total amount of memory needed to be mapped. + pageoffset is because we're starting from the base address of the page, not our actual physical address
 
 	vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from base address pointing to /gpiomem0
