@@ -48,7 +48,6 @@ func (b *pinctrlpi5) pinControlSetup() error {
 		b.logger.Errorf("error creating virtual page from GPIO physical address")
 		return err
 	}
-	defer b.pinControlMemoryCleanup()
 
 	return err
 }
@@ -125,6 +124,29 @@ func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 	return physAddr, err
 }
 
+// read in 'numCells' 32 bit chunks from rangeByteContents, the bytestream outputted from reading the file '/ranges'. Convert bytes into their uint64 value
+func parseBytstreamCells(numCells uint32, rangeByteContents []byte) uint64 {
+	var parsedValue uint64
+
+	switch numCells {
+
+	// reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
+	case 1:
+		parsedValue = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numCells)]))
+
+	// reading in 64 bits
+	case 2:
+		parsedValue = binary.BigEndian.Uint64(rangeByteContents[:(4 * numCells)])
+
+	// reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
+	case 3:
+		parsedValue = binary.BigEndian.Uint64(rangeByteContents[(4 * (numCells - 2)):(4 * numCells)])
+	}
+
+	rangeByteContents = rangeByteContents[(4 * numCells):] // flush the bytes already parsed out of the array
+	return parsedValue
+}
+
 // Reads the /ranges file and converts the bytestream into integers representing the < child address parent address parent size >
 func getRangesAddrInfo(childNodePath string, numCAddrCells uint32, numPAddrCells uint32, numAddrSpaceCells uint32) ([]rangeInfo, error) {
 
@@ -144,35 +166,10 @@ func getRangesAddrInfo(childNodePath string, numCAddrCells uint32, numPAddrCells
 		childAddr, parentAddr := INVALID_ADDR, INVALID_ADDR
 		addrSpaceSize := uint64(0)
 
-		switch numCAddrCells {
-		case 1: // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
-			childAddr = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numCAddrCells)]))
-		case 2: // reading in 64 bits
-			childAddr = binary.BigEndian.Uint64(rangeByteContents[:(4 * numCAddrCells)])
-		case 3: // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
-			childAddr = binary.BigEndian.Uint64(rangeByteContents[(4 * (numCAddrCells - 2)):(4 * numCAddrCells)])
-		}
-		rangeByteContents = rangeByteContents[(4 * numCAddrCells):] // flush the bytes already parsed out of the array
-
-		switch numPAddrCells {
-		case 1: // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
-			parentAddr = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numPAddrCells)]))
-		case 2: // reading in 64 bits
-			parentAddr = binary.BigEndian.Uint64(rangeByteContents[:(4 * numPAddrCells)])
-		case 3: // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
-			parentAddr = binary.BigEndian.Uint64(rangeByteContents[(4 * (numPAddrCells - 2)):(4 * numPAddrCells)])
-		}
-		rangeByteContents = rangeByteContents[(4 * numPAddrCells):]
-
-		switch numAddrSpaceCells {
-		case 1: // reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
-			addrSpaceSize = uint64(binary.BigEndian.Uint32(rangeByteContents[:(4 * numAddrSpaceCells)]))
-		case 2: // reading in 64 bits
-			addrSpaceSize = binary.BigEndian.Uint64(rangeByteContents[:(4 * numAddrSpaceCells)])
-		case 3: // reading in more than 64 bits. we only want the last 64 bits of the address though, so we cut off the other portion of it
-			addrSpaceSize = binary.BigEndian.Uint64(rangeByteContents[(4 * (numAddrSpaceCells - 2)):(4 * numAddrSpaceCells)])
-		}
-		rangeByteContents = rangeByteContents[(4 * numAddrSpaceCells):]
+		// based on how many 32-bit chunks are required for every field, read in chunks and convert them into their integer values for the address / size variables.
+		childAddr = parseBytstreamCells(numCAddrCells, rangeByteContents)
+		parentAddr = parseBytstreamCells(numPAddrCells, rangeByteContents)
+		addrSpaceSize = parseBytstreamCells(numAddrSpaceCells, rangeByteContents)
 
 		rangeInfo := rangeInfo{childAddr: childAddr, parentAddr: parentAddr, addrSpaceSize: addrSpaceSize}
 		addrRanges = append(addrRanges, rangeInfo)
@@ -255,8 +252,7 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	}
 
 	pageSize := uint64(syscall.Getpagesize())
-	pageOffset := b.physAddr & (pageSize - 1) // difference between base address of the page and the address we're actually tring to access
-	//pageStartAddr := int64(b.physAddr - pageOffset) // base address of the page. needed when we can't open dev/gpiomem0
+	pageOffset := b.physAddr & (pageSize - 1)       // difference between base address of the page and the address we're actually tring to access
 	lenMapping := int(pageOffset) + int(b.chipSize) // total amount of memory needed to be mapped. + pageoffset is because we're starting from the base address of the page, not our actual physical address
 
 	vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from base address pointing to /gpiomem0

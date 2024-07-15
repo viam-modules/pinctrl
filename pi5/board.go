@@ -532,6 +532,7 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 func (b *pinctrlpi5) Close(ctx context.Context) error {
 	b.mu.Lock()
 	b.cancelFunc()
+	b.pinControlMemoryCleanup()
 	b.mu.Unlock()
 	b.activeBackgroundWorkers.Wait()
 
