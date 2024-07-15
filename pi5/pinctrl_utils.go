@@ -279,7 +279,7 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 
 	fmt.Printf("page offset = %x, %d \n", dataStartingAddrDiff, dataStartingAddrDiff)
 
-	vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from base address pointing to /gpiomem0
+	vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from the beginning of the mem/gpiomem0 file. 
 	if err != nil {
 		if err == syscall.ENOMEM {
 			return fmt.Errorf("failed to mmap: cannot allocate memory for mmap call %w", err)
