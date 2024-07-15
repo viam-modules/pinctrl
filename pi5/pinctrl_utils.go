@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
-	"unsafe"
 
 	mmap "github.com/edsrzf/mmap-go"
 	"github.com/pkg/errors"
@@ -277,18 +276,12 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	dataStartingAddrDiff := b.physAddr & (pageSize - 1) // difference between base address of the page and the address we're actually tring to access
 	lenMapping := (int(dataStartingAddrDiff)) + int(b.chipSize)
 
-	fmt.Printf("page offset = %x, %d \n", dataStartingAddrDiff, dataStartingAddrDiff)
-
-	vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from the beginning of the mem/gpiomem0 file. 
+	vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from the beginning of the mem/gpiomem0 file.
 	if err != nil {
-		if err == syscall.ENOMEM {
-			return fmt.Errorf("failed to mmap: cannot allocate memory for mmap call %w", err)
-		}
 		return fmt.Errorf("failed to mmap: %w\n", err)
 	}
 
-	tempVirtAddr := unsafe.Pointer(&vPage[0]) // we can't directly assign something of type Pointer to *uint64 in one line of code
-	b.virtAddr = (*uint64)(tempVirtAddr)
+	b.virtAddr = &vPage[dataStartingAddrDiff]
 	return err
 }
 
