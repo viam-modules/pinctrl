@@ -14,9 +14,10 @@ import (
 	"unsafe"
 
 	mmap "github.com/edsrzf/mmap-go"
+	"github.com/pkg/errors"
 )
 
-// rangeInfo represents the info provided in the ranges property of a device tree. It provides a mapping between // registers in the child address space to the parent address space.
+// rangeInfo represents the info provided in the ranges property of a device tree. It provides a mapping between addresses in the child address space to the parent address space.
 type rangeInfo struct {
 	childAddr     uint64
 	parentAddr    uint64
@@ -28,6 +29,33 @@ var INVALID_ADDR uint64 = uint64(math.NaN())
 const gpioName = "gpio0"
 const gpioMemPath = "/dev/gpiomem0"
 const dtBaseNodePath = "/proc/device-tree"
+
+var bankDivisions = []int{1, 28, 34}
+var maxPinNum = 40
+
+// Pin FSEL 'Alternative Modes' Information
+const fselBank0Offset = 0x0000
+const fselBank1Offset = 0x4000
+const fselBank2Offset = 0x8000
+const fselPinDataSize = 0x2 // in bytes. 16 bits per pin to represent all possible control modes
+
+const (
+	ALT0 uint16 = 0x01
+	ALT1 uint16 = 0x02
+	ALT3 uint16 = 0x03
+	ALT4 uint16 = 0x04
+	ALT5 uint16 = 0x05
+	ALT6 uint16 = 0x06
+	ALT7 uint16 = 0x07
+	ALT8 uint16 = 0x08
+	NULL uint16 = 0x1f
+)
+
+// Pin IN/OUT Mode Information
+const (
+	IN  = 0x10
+	OUT = 0x11
+)
 
 // Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
 func (b *pinctrlpi5) pinControlSetup() error {
@@ -48,7 +76,7 @@ func (b *pinctrlpi5) pinControlSetup() error {
 		b.logger.Errorf("error creating virtual page from GPIO physical address")
 		return err
 	}
-	defer b.pinControlMemoryCleanup()
+	defer b.pinControlMemoryCleanup() // I might need to move this to shutdown or something depending on implementation
 
 	return err
 }
@@ -284,4 +312,31 @@ func (b *pinctrlpi5) pinControlMemoryCleanup() error {
 	}
 
 	return nil
+}
+
+func getBankNumber(pinNumber int) (int, error) {
+
+	if !(1 <= pinNumber && pinNumber <= maxPinNum) {
+		return -1, errors.New("pin is out of bank range")
+	}
+
+	for i := 0; i < len(bankDivisions)-1; i++ {
+		if bankDivisions[i] <= pinNumber && pinNumber < bankDivisions[i+1] {
+			return i, nil
+		}
+	}
+
+	return -1, errors.New("pin in bank range but not set")
+}
+
+func (b *pinctrlpi5) setPin(pinNumber int) error {
+
+	bankNum, err := getBankNumber(pinNumber)
+	if err != nil {
+		return fmt.Errorf("error getting gpio bank number: %w", err)
+	}
+
+	fmt.Printf("bank num = %d \n", bankNum)
+
+	return err
 }
