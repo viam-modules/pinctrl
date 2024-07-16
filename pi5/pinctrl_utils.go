@@ -22,8 +22,6 @@ type rangeInfo struct {
 	addrSpaceSize uint64
 }
 
-var INVALID_ADDR uint64 = uint64(math.NaN())
-
 const gpioName = "gpio0"
 const gpioMemPath = "/dev/gpiomem0"
 const dtBaseNodePath = "/proc/device-tree"
@@ -108,7 +106,7 @@ func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 
 	regByteContents, err := os.ReadFile(childNodePath)
 	if err != nil {
-		return INVALID_ADDR, fmt.Errorf("trouble getting reg addr info for %s: %w\n", childNodePath, err)
+		return invalidAddr, fmt.Errorf("trouble getting reg addr info for %s: %w\n", childNodePath, err)
 	}
 
 	physAddr, err := parseCells(numPAddrCells, &regByteContents)
@@ -178,14 +176,15 @@ func getRangesAddrInfo(childNodePath string, numCAddrCells uint32, numPAddrCells
 // Uses Information Stored within the 'reg' property of the child node and 'ranges' property of its parents to map the child's physical address into the dev/gpiomem space
 func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 
-	currNodePath := dtBaseNodePath + nodePath // initially: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
-	var numCAddrCells uint32 = 0
 	var err error
+	currNodePath := dtBaseNodePath + nodePath // initially: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
+	invalidAddr := uint64(math.NaN())
+	numCAddrCells := uint32(0)
 
 	/* Call Recursive Function to Calculate Phys Addr. Works way up the Device Tree, using the information
 	found in #ranges at every node to translate from the child's address space to the parent's address space
 	until we get the child's physical address in all of /dev/gpiomem. */
-	b.physAddr, err = setGPIONodePhysAddrHelper(currNodePath, INVALID_ADDR, numCAddrCells)
+	b.physAddr, err = setGPIONodePhysAddrHelper(currNodePath, invalidAddr, numCAddrCells)
 	if err != nil {
 		return fmt.Errorf("trouble calculating phys addr for %s: %w\n", nodePath, err)
 	}
@@ -196,6 +195,8 @@ func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 // Recursively Traverses Device Tree to Calcuate Physical Address of specified GPIO Chip
 func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddrCells uint32) (uint64, error) {
 
+	invalidAddr := uint64(math.NaN())
+
 	if currNodePath == dtBaseNodePath { // Base Case: We are at the root of the device tree.
 		return physAddress, nil
 	}
@@ -204,20 +205,20 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 	parentNodePath := filepath.Dir(currNodePath)
 	numPAddrCells, numAddrSpaceCells, err := getNumAddrSizeCellsInfo(parentNodePath)
 	if err != nil {
-		return INVALID_ADDR, err
+		return invalidAddr, err
 	}
 
 	var addrRanges []rangeInfo
-	if physAddress == INVALID_ADDR { // Case 1: We are the Child Node. No addr has been set. Read the reg file to get the physical address within our parents space.
+	if physAddress == invalidAddr { // Case 1: We are the Child Node. No addr has been set. Read the reg file to get the physical address within our parents space.
 		physAddress, err = getRegAddr(currNodePath, numPAddrCells)
 		if err != nil {
-			return INVALID_ADDR, err
+			return invalidAddr, err
 		}
 
 	} else { // Case 2: We use the ranges property to continue mapping a child addr into our parent addr space.
 		addrRanges, err = getRangesAddrInfo(currNodePath, numCAddrCells, numPAddrCells, numAddrSpaceCells)
 		if err != nil {
-			return INVALID_ADDR, err
+			return invalidAddr, err
 		}
 
 		// getRangesAddrInfo returns a list of all possible child address ranges our physical address can fall into. We must see which range to use, so that we can map our physical address into the correct parent address range.
