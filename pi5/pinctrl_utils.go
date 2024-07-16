@@ -103,6 +103,7 @@ func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 
 	childNodePath += "/reg"
 	childNodePath = cleanFilePath(childNodePath)
+	invalidAddr := uint64(math.NaN())
 
 	regByteContents, err := os.ReadFile(childNodePath)
 	if err != nil {
