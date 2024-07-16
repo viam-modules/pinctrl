@@ -29,7 +29,7 @@ const gpioMemPath = "/dev/gpiomem0"
 const dtBaseNodePath = "/proc/device-tree"
 
 // Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
-func (b *pinctrlpi5) pinControlSetup() error {
+func (b *pinctrlpi5) setupPinControl() error {
 	nodePath, err := b.findPathFromAlias(gpioName) // this ("gpio") is hardcoded now, we will fix that later!
 	if err != nil {
 		b.logger.Errorf("error getting raspi5 GPIO nodePath")

@@ -87,7 +87,7 @@ func newBoard(
 		return nil, err
 	}
 
-	if err := b.pinControlSetup(); err != nil {
+	if err := b.setupPinControl(); err != nil {
 		return nil, err
 	}
 	return b, nil
