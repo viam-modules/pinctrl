@@ -81,14 +81,13 @@ func newBoard(
 		// store addresses + other stuff here
 		gpioNodePath: "",
 		physAddr:     INVALID_ADDR,
-		virtAddr:     &INVALID_ADDR,
 		chipSize:     0x30000,
 	}
 	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
 		return nil, err
 	}
 
-	if err := b.pinControlSetup(); err != nil {
+	if err := b.setupPinControl(); err != nil {
 		return nil, err
 	}
 	return b, nil
@@ -391,7 +390,7 @@ type pinctrlpi5 struct {
 	/* Custom PinCTRL Params Here: */
 	dtBaseNodePath string    // file path referring to base of device tree: /proc/device-tree
 	gpioNodePath   string    // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
-	virtAddr       *uint64   // base address of mapped virtual page referencing the gpio chip data
+	virtAddr       *byte     // base address of mapped virtual page referencing the gpio chip data
 	physAddr       uint64    // base addres of the gpio chip data in dev/mem/
 	chipSize       uint64    // length of chip's address space in memory
 	memFile        *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
@@ -531,11 +530,15 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 // Close attempts to cleanly close each part of the board.
 func (b *pinctrlpi5) Close(ctx context.Context) error {
 	b.mu.Lock()
+
+	err := b.cleanupPinControlMemory()
+	if err != nil {
+		return fmt.Errorf("trouble cleaning up pincontrol memory: %w", err)
+	}
 	b.cancelFunc()
 	b.mu.Unlock()
 	b.activeBackgroundWorkers.Wait()
 
-	var err error
 	for _, pin := range b.gpios {
 		err = multierr.Combine(err, pin.Close())
 	}
