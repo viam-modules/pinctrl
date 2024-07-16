@@ -530,13 +530,12 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 // Close attempts to cleanly close each part of the board.
 func (b *pinctrlpi5) Close(ctx context.Context) error {
 	b.mu.Lock()
-	b.cancelFunc()
 
 	err := b.cleanupPinControlMemory()
 	if err != nil {
 		return fmt.Errorf("trouble cleaning up pincontrol memory: %w", err)
 	}
-
+	b.cancelFunc()
 	b.mu.Unlock()
 	b.activeBackgroundWorkers.Wait()
 
