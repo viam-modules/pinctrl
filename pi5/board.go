@@ -530,7 +530,7 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 func (b *pinctrlpi5) Close(ctx context.Context) error {
 	b.mu.Lock()
 
-	err := b.cleanupPinControlMemory()
+	err := b.cleanupPinControl()
 	if err != nil {
 		return fmt.Errorf("trouble cleaning up pincontrol memory: %w", err)
 	}
