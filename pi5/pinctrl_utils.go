@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"unsafe"
 
 	mmap "github.com/edsrzf/mmap-go"
 	"github.com/pkg/errors"
@@ -42,7 +41,10 @@ const (
 	ALT6 byte = 0x06
 	ALT7 byte = 0x07
 	ALT8 byte = 0x08
+
+	HPWM byte = ALT3
 	GPIO byte = ALT5
+
 	NULL byte = 0x1f
 )
 
@@ -75,25 +77,21 @@ func (b *pinctrlpi5) setupPinControl() error {
 		b.logger.Errorf("error creating virtual page from GPIO physical address")
 		return err
 	}
-
-	//b.setPin(1, ALT6)
-	//b.setPin(1, ALT6)
-	//b.setPin(2, ALT6)
-	b.setPin(19, ALT3)
-
-	//fmt.Printf("3 and 4 ----- \n\n")
-	//b.setPin(3, ALT3)
-	//b.setPin(4, ALT3)
-
-	// b.setPin(28)
-	// b.setPin(29)
-	// b.setPin(30)
-
-	// b.setPin(34)
-	// b.setPin(35)
-	// b.setPin(36)
-
 	return err
+}
+
+// Cleans up mapped memory / files upon board close() call
+func (b *pinctrlpi5) cleanupPinControlMemory() error {
+
+	if err := b.vPage.Unmap(); err != nil {
+		return fmt.Errorf("Error during unmap: %w", err)
+	}
+
+	if err := b.memFile.Close(); err != nil {
+		return fmt.Errorf("Error during memFile closing: %w", err)
+	}
+
+	return nil
 }
 
 // We look in the 'aliases' node at the base of proc/device-tree to determine the full file path required to access our GPIO Chip
@@ -333,21 +331,15 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	return err
 }
 
-// Cleans up mapped memory / files upon board close() call
-func (b *pinctrlpi5) cleanupPinControlMemory() error {
-
-	if err := b.vPage.Unmap(); err != nil {
-		return fmt.Errorf("Error during unmap: %w", err)
-	}
-
-	if err := b.memFile.Close(); err != nil {
-		return fmt.Errorf("Error during memFile closing: %w", err)
-	}
-
-	return nil
-}
-
+/*
+For all Pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
+For a given pin, this method determines:
+ 1. which bank the pin belongs to
+ 2. the starting address of its 8 byte data chunk
+*/
 func getPinAddressOffset(pinNumber int) (int64, error) {
+
+	bankHeaderSize := 8 // 8 bytes of either header data assosciated with a bank (unsure about what is stored here though)
 
 	if !(1 <= pinNumber && pinNumber <= maxPinNum) {
 		return -1, errors.New("pin is out of bank range")
@@ -360,7 +352,7 @@ func getPinAddressOffset(pinNumber int) (int64, error) {
 			bankBaseAddr := fselBankOffsets[bankNum]
 			pinBankOffset := pinNumber - bankDivisions[i]
 
-			pinAddressOffset := bankBaseAddr + ((pinBankOffset) * fselPinDataSize) + 8 //+ 2 // +1 for bank header? got from pinctrl library
+			pinAddressOffset := bankBaseAddr + bankHeaderSize + ((pinBankOffset) * fselPinDataSize)
 			return int64(pinAddressOffset), nil
 		}
 	}
@@ -368,59 +360,31 @@ func getPinAddressOffset(pinNumber int) (int64, error) {
 	return -1, errors.New("pin in bank range but not set")
 }
 
+// This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
 func (b *pinctrlpi5) setPin(pinNumber int, newMode byte) error {
+
+	// Of the 8 bytes that represent a given pin's data, only the 4th index corresponds to the alternative mode setting
+	altModeIndex := 4
 
 	pinAddressOffset, err := getPinAddressOffset(pinNumber)
 	if err != nil {
 		return fmt.Errorf("error getting gpio bank number: %w", err)
 	}
 
+	// find pin data within virtual page; retrieve the 4th byte from the pin data
 	pinBytes := b.vPage[pinAddressOffset : pinAddressOffset+fselPinDataSize]
-
-	//var startPage *byte = &b.vPage[0]
-
-	ptrStart := unsafe.Pointer(&b.vPage[0])
-	addr1 := uintptr(ptrStart)
-	ptrEnd := unsafe.Pointer(&pinBytes[4])
-	addr2 := uintptr(ptrEnd)
-
-	//fmt.Printf("starting    virtual address: %p\n", ptrStart)
-	fmt.Printf("starting    virtual numeric address: %x\n", addr1)
-	//fmt.Printf("pin bytes   virtual address: %p\n", ptrEnd)
-	fmt.Printf("pin bytes[4]   virtual numeric address: %x\n", addr2)
-	//fmt.Printf("pin byte[4] virtual address: %x\n", &pinBytes[4])
-	fmt.Printf("--- difference = 0x%x\n\n", addr2-addr1)
-	fmt.Printf("value at the address: 0x%x\n", *(*byte)(ptrEnd))
-
-	//fmt.Printf("pinAddressOffset = %x \n", pinAddressOffset)
-	//fmt.Printf("ttpin# %d base[%x] = 0x%x, \n", pinNumber, pinAddressOffset, pinBytes)
-
-	fmt.Printf("OLD altmoDe byte: %x\n", altModeByte)
+	altModeByte := pinBytes[altModeIndex]
 
 	// We keep the left half of the byte preserved, only modifying the right half
-
 	// Preserve Left Side of Byte using this Mask
 	leftSideMask := byte(0xf0)
 
 	// Set Right Side of Byte ONLY using this Mask. Ensures left side cannot be overwritten
 	rightSideMask := byte(0x0f)
 
+	// Set new mode via write to correct while protecting previous other settings
 	newAltModeByte := (altModeByte & leftSideMask) | (newMode & rightSideMask)
-
-	//fmt.Printf("new altmoDe byte: %x\n", newAltModeByte)
-
 	pinBytes[4] = newAltModeByte
-
-	fmt.Printf("new altmoDe byte: %x\n", altModeByte)
-	fmt.Printf("new altmoDe byte: %x\n", pinBytes[4])
-
-	fmt.Printf("ttpin# %d base[%x] = %x, \n", pinNumber, pinAddressOffset, pinBytes)
-
-	// fmt.Printf("pin# %d base[%d] = %x\n", pinNumber, pinAddressOffset, pinBytes[0:fselPinDataSize])
-
-	// for i := int(0); i < len(pinBytes); i++ {
-	// 	fmt.Printf("%d: %x\n", i, pinBytes[i])
-	// }
 
 	return err
 }

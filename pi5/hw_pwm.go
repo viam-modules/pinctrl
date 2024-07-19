@@ -31,10 +31,11 @@ type pwmDevice struct {
 	// We have no mutable state, but the mutex is used to write to multiple pseudofiles atomically.
 	mu     sync.Mutex
 	logger logging.Logger
+	board  *pinctrlpi5
 }
 
-func newPwmDevice(chipPath string, line int, logger logging.Logger) *pwmDevice {
-	return &pwmDevice{chipPath: chipPath, line: line, logger: logger}
+func newPwmDevice(chipPath string, line int, board *pinctrlpi5) *pwmDevice {
+	return &pwmDevice{chipPath: chipPath, line: line, logger: board.logger, board: board}
 }
 
 func writeValue(filepath string, value uint64, logger logging.Logger) error {
@@ -107,6 +108,12 @@ func (pwm *pwmDevice) unexport() error {
 	if err := pwm.writeChip("unexport", uint64(pwm.line)); err != nil {
 		return err
 	}
+
+	// set mode here gpio, should a be redundant call because switching to GPIO happens implicitly
+	if err := pwm.SetPinMode(GPIO); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -166,6 +173,35 @@ func (pwm *pwmDevice) callGPIOReadall() {
 	}
 }
 
+/*
+Each pwm line corresponds to a GPIO Pin. The pi5 mapping is:
+
+	Line 0 -> GPIO 12
+	Line 1 -> GPIO 13
+	Line 2 -> GPIO 18
+	Line 3 -> GPIO 19
+
+Other mappings for different pis can be found here:  https://pypi.org/project/rpi-hardware-pwm/#modal-close
+
+Use the board.setPin to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'HPWM' or 'GPIO'
+*/
+func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
+	switch pwm.line {
+	case 0:
+		err = pwm.board.setPin(12, pinMode)
+	case 1:
+		err = pwm.board.setPin(13, pinMode)
+	case 2:
+		err = pwm.board.setPin(18, pinMode)
+	case 3:
+		err = pwm.board.setPin(19, pinMode)
+	default:
+		return errors.New("attemping to set PWM pin mode but pwm line is not valid")
+	}
+
+	return err
+}
+
 // SetPwm configures an exported pin and enables its output signal.
 // Warning: if this function returns a non-nil error, it could leave the pin in an indeterminate
 // state. Maybe it's exported, maybe not. Maybe it's enabled, maybe not. The new frequency and duty
@@ -174,25 +210,22 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 	pwm.mu.Lock()
 	defer pwm.mu.Unlock()
 
-	fmt.Printf("\nInitial State: \n")
-
-	// -> set mode here
-
-	pwm.callGPIOReadall()
-
 	// If there is ever an error in here, annotate it with which sysfs device and line we're using.
 	defer func() {
 		err = pwm.wrapError(err)
 	}()
+
+	// Set pin mode to hardware pwm enabled before using for PWM.
+	// Helper method uses 'pwm.line' to determine which pin's mode needs to be updated.
+	if err := pwm.SetPinMode(HPWM); err != nil {
+		return err
+	}
 
 	// Every time this pin is used as a (non-PWM) GPIO input or output, it gets unexported on the
 	// PWM chip. Make sure to re-export it here.
 	if err := pwm.export(); err != nil {
 		return err
 	}
-
-	fmt.Printf("\nAfter Rexport Call: \n")
-	pwm.callGPIOReadall()
 
 	// Intuitively, we should disable the pin, set the new parameters, and then enable it again.
 	// However, the BeagleBone AI64 has a weird quirk where you need to enable the pin *before* you
@@ -215,9 +248,6 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 		}
 	}
 
-	fmt.Printf("\nAfter Enable PWM Signal Call: \n")
-	pwm.callGPIOReadall()
-
 	// Sysfs has a pseudofile named duty_cycle which contains the number of nanoseconds that the
 	// pin should be high within a period. It's not how the rest of the world defines a duty cycle,
 	// so we will refer to it here as the active duration.
@@ -238,33 +268,21 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 	// period, unless the period in zero. In that case, just ignore the error.
 	goutils.UncheckedError(pwm.writeLine("duty_cycle", 0))
 
-	fmt.Printf("\nSet Duty Cycle to 0\n")
-	pwm.callGPIOReadall()
-
 	// Now that the active duration is 0, setting the period to any number should work.
 	if err := pwm.writeLine("period", safePeriodNs); err != nil {
 		return err
 	}
-
-	fmt.Printf("\nSet Safe Period\n")
-	pwm.callGPIOReadall()
 
 	// Same thing here: the active duration is 0, so any value should work for the period.
 	if err := pwm.writeLine("period", periodNs); err != nil {
 		return err
 	}
 
-	fmt.Printf("\nSet Period\n")
-	pwm.callGPIOReadall()
-
 	// Now that the period is set to its intended value, there should be no trouble setting the
 	// active duration, which is guaranteed to be at most the period.
 	if err := pwm.writeLine("duty_cycle", activeDurationNs); err != nil {
 		return err
 	}
-
-	fmt.Printf("\nSet Duty Cycle\n")
-	pwm.callGPIOReadall()
 
 	return nil
 }

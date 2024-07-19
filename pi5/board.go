@@ -368,7 +368,7 @@ func (b *pinctrlpi5) createGpioPin(mapping GPIOBoardMapping) *gpioPin {
 		logger:       b.logger,
 	}
 	if mapping.HWPWMSupported {
-		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, b.logger)
+		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, b)
 	}
 	return &pin
 }
