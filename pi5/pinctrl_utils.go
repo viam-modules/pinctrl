@@ -10,10 +10,15 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unsafe"
 
 	mmap "github.com/edsrzf/mmap-go"
 	"github.com/pkg/errors"
 )
+
+const gpioName = "gpio0"
+const gpioMemPath = "/dev/gpiomem0"
+const dtBaseNodePath = "/proc/device-tree"
 
 // rangeInfo represents the info provided in the ranges property of a device tree. It provides a mapping between addresses in the child address space to the parent address space.
 type rangeInfo struct {
@@ -22,29 +27,23 @@ type rangeInfo struct {
 	addrSpaceSize uint64
 }
 
-const gpioName = "gpio0"
-const gpioMemPath = "/dev/gpiomem0"
-const dtBaseNodePath = "/proc/device-tree"
-
-var bankDivisions = []int{1, 28, 34}
-var maxPinNum = 40
-
 // Pin FSEL 'Alternative Modes' Information
 const fselBank0Offset = 0x0000
 const fselBank1Offset = 0x4000
 const fselBank2Offset = 0x8000
-const fselPinDataSize = 0x2 // in bytes. 16 bits per pin to represent all possible control modes
+const fselPinDataSize = 0x8 // in bytes. 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
 
 const (
-	ALT0 uint16 = 0x01
-	ALT1 uint16 = 0x02
-	ALT3 uint16 = 0x03
-	ALT4 uint16 = 0x04
-	ALT5 uint16 = 0x05
-	ALT6 uint16 = 0x06
-	ALT7 uint16 = 0x07
-	ALT8 uint16 = 0x08
-	NULL uint16 = 0x1f
+	ALT1 byte = 0x01
+	ALT2 byte = 0x02
+	ALT3 byte = 0x03 // PWM MODE
+	ALT4 byte = 0x04
+	ALT5 byte = 0x05 // GPIO MODE
+	ALT6 byte = 0x06
+	ALT7 byte = 0x07
+	ALT8 byte = 0x08
+	GPIO byte = ALT5
+	NULL byte = 0x1f
 )
 
 // Pin IN/OUT Mode Information
@@ -52,6 +51,10 @@ const (
 	IN  = 0x10
 	OUT = 0x11
 )
+
+var maxPinNum = 40
+var bankDivisions = []int{1, 28, 34, maxPinNum + 1}
+var fselBankOffsets = []int{fselBank0Offset, fselBank1Offset, fselBank2Offset}
 
 // Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
 func (b *pinctrlpi5) setupPinControl() error {
@@ -72,6 +75,23 @@ func (b *pinctrlpi5) setupPinControl() error {
 		b.logger.Errorf("error creating virtual page from GPIO physical address")
 		return err
 	}
+
+	//b.setPin(1, ALT6)
+	//b.setPin(1, ALT6)
+	//b.setPin(2, ALT6)
+	b.setPin(19, ALT3)
+
+	//fmt.Printf("3 and 4 ----- \n\n")
+	//b.setPin(3, ALT3)
+	//b.setPin(4, ALT3)
+
+	// b.setPin(28)
+	// b.setPin(29)
+	// b.setPin(30)
+
+	// b.setPin(34)
+	// b.setPin(35)
+	// b.setPin(36)
 
 	return err
 }
@@ -327,7 +347,7 @@ func (b *pinctrlpi5) cleanupPinControlMemory() error {
 	return nil
 }
 
-func getBankNumber(pinNumber int) (int, error) {
+func getPinAddressOffset(pinNumber int) (int64, error) {
 
 	if !(1 <= pinNumber && pinNumber <= maxPinNum) {
 		return -1, errors.New("pin is out of bank range")
@@ -335,21 +355,72 @@ func getBankNumber(pinNumber int) (int, error) {
 
 	for i := 0; i < len(bankDivisions)-1; i++ {
 		if bankDivisions[i] <= pinNumber && pinNumber < bankDivisions[i+1] {
-			return i, nil
+
+			bankNum := i
+			bankBaseAddr := fselBankOffsets[bankNum]
+			pinBankOffset := pinNumber - bankDivisions[i]
+
+			pinAddressOffset := bankBaseAddr + ((pinBankOffset) * fselPinDataSize) + 8 //+ 2 // +1 for bank header? got from pinctrl library
+			return int64(pinAddressOffset), nil
 		}
 	}
 
 	return -1, errors.New("pin in bank range but not set")
 }
 
-func (b *pinctrlpi5) setPin(pinNumber int) error {
+func (b *pinctrlpi5) setPin(pinNumber int, newMode byte) error {
 
-	bankNum, err := getBankNumber(pinNumber)
+	pinAddressOffset, err := getPinAddressOffset(pinNumber)
 	if err != nil {
 		return fmt.Errorf("error getting gpio bank number: %w", err)
 	}
 
-	fmt.Printf("bank num = %d \n", bankNum)
+	pinBytes := b.vPage[pinAddressOffset : pinAddressOffset+fselPinDataSize]
+
+	//var startPage *byte = &b.vPage[0]
+
+	ptrStart := unsafe.Pointer(&b.vPage[0])
+	addr1 := uintptr(ptrStart)
+	ptrEnd := unsafe.Pointer(&pinBytes[4])
+	addr2 := uintptr(ptrEnd)
+
+	//fmt.Printf("starting    virtual address: %p\n", ptrStart)
+	fmt.Printf("starting    virtual numeric address: %x\n", addr1)
+	//fmt.Printf("pin bytes   virtual address: %p\n", ptrEnd)
+	fmt.Printf("pin bytes[4]   virtual numeric address: %x\n", addr2)
+	//fmt.Printf("pin byte[4] virtual address: %x\n", &pinBytes[4])
+	fmt.Printf("--- difference = 0x%x\n\n", addr2-addr1)
+	fmt.Printf("value at the address: 0x%x\n", *(*byte)(ptrEnd))
+
+	//fmt.Printf("pinAddressOffset = %x \n", pinAddressOffset)
+	//fmt.Printf("ttpin# %d base[%x] = 0x%x, \n", pinNumber, pinAddressOffset, pinBytes)
+
+	fmt.Printf("OLD altmoDe byte: %x\n", altModeByte)
+
+	// We keep the left half of the byte preserved, only modifying the right half
+
+	// Preserve Left Side of Byte using this Mask
+	leftSideMask := byte(0xf0)
+
+	// Set Right Side of Byte ONLY using this Mask. Ensures left side cannot be overwritten
+	rightSideMask := byte(0x0f)
+
+	newAltModeByte := (altModeByte & leftSideMask) | (newMode & rightSideMask)
+
+	//fmt.Printf("new altmoDe byte: %x\n", newAltModeByte)
+
+	pinBytes[4] = newAltModeByte
+
+	fmt.Printf("new altmoDe byte: %x\n", altModeByte)
+	fmt.Printf("new altmoDe byte: %x\n", pinBytes[4])
+
+	fmt.Printf("ttpin# %d base[%x] = %x, \n", pinNumber, pinAddressOffset, pinBytes)
+
+	// fmt.Printf("pin# %d base[%d] = %x\n", pinNumber, pinAddressOffset, pinBytes[0:fselPinDataSize])
+
+	// for i := int(0); i < len(pinBytes); i++ {
+	// 	fmt.Printf("%d: %x\n", i, pinBytes[i])
+	// }
 
 	return err
 }
