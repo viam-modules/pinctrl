@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	Model = resource.NewModel("viam-labs", "pinctrl", "pi5")
+	Model = resource.NewModel("viam", "pinctrl", "rpi5")
 )
 
 func init() {

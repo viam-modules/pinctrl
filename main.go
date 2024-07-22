@@ -9,7 +9,7 @@ import (
 	"go.viam.com/rdk/module"
 	"go.viam.com/utils"
 
-	pi5 "pinctrl/pi5"
+	pi5 "pinctrl/rpi5"
 
 	"go.viam.com/rdk/components/board"
 )
