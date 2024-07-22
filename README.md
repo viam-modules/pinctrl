@@ -1,1 +1,1 @@
-# raspi5-pinctrl
+# pinctrl
