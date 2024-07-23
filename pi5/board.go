@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,9 +16,6 @@ import (
 	"go.viam.com/utils"
 
 	"go.viam.com/rdk/components/board"
-	"go.viam.com/rdk/components/board/genericlinux/buses"
-	"go.viam.com/rdk/components/board/mcp3008helper"
-	"go.viam.com/rdk/components/board/pinwrappers"
 	"go.viam.com/rdk/grpc"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
@@ -74,13 +70,11 @@ func newBoard(
 		cancelCtx:  cancelCtx,
 		cancelFunc: cancelFunc,
 
-		analogReaders: map[string]*wrappedAnalogReader{},
-		gpios:         map[string]*gpioPin{},
-		interrupts:    map[string]*digitalInterrupt{},
+		gpios:      map[string]*gpioPin{},
+		interrupts: map[string]*digitalInterrupt{},
 
 		// store addresses + other stuff here
-		gpioNodePath: "",
-		chipSize:     0x30000,
+		chipSize: 0x30000,
 	}
 	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
 		return nil, err
@@ -92,7 +86,7 @@ func newBoard(
 	return b, nil
 }
 
-// Reconfigure reconfigures the board with interrupt pins, spi and i2c, and analogs.
+// Reconfigure reconfigures the board.
 func (b *pinctrlpi5) Reconfigure(
 	ctx context.Context,
 	_ resource.Dependencies,
@@ -107,12 +101,6 @@ func (b *pinctrlpi5) Reconfigure(
 	defer b.mu.Unlock()
 
 	if err := b.reconfigureGpios(newConf); err != nil {
-		return err
-	}
-	if err := b.reconfigureAnalogReaders(ctx, newConf); err != nil {
-		return err
-	}
-	if err := b.reconfigureInterrupts(newConf); err != nil {
 		return err
 	}
 	return nil
@@ -217,44 +205,6 @@ func (b *pinctrlpi5) reconfigureGpios(newConf *LinuxBoardConfig) error {
 	return nil
 }
 
-func (b *pinctrlpi5) reconfigureAnalogReaders(ctx context.Context, newConf *LinuxBoardConfig) error {
-	stillExists := map[string]struct{}{}
-	for _, c := range newConf.AnalogReaders {
-		channel, err := strconv.Atoi(c.Pin)
-		if err != nil {
-			return errors.Errorf("bad analog pin (%s)", c.Pin)
-		}
-
-		bus := buses.NewSpiBus(c.SPIBus)
-
-		stillExists[c.Name] = struct{}{}
-		if curr, ok := b.analogReaders[c.Name]; ok {
-			if curr.chipSelect != c.ChipSelect {
-				ar := &mcp3008helper.MCP3008AnalogReader{channel, bus, c.ChipSelect}
-				curr.reset(ctx, curr.chipSelect,
-					pinwrappers.SmoothAnalogReader(ar, board.AnalogReaderConfig{
-						AverageOverMillis: c.AverageOverMillis, SamplesPerSecond: c.SamplesPerSecond,
-					}, b.logger))
-			}
-			continue
-		}
-		ar := &mcp3008helper.MCP3008AnalogReader{channel, bus, c.ChipSelect}
-		b.analogReaders[c.Name] = newWrappedAnalogReader(ctx, c.ChipSelect,
-			pinwrappers.SmoothAnalogReader(ar, board.AnalogReaderConfig{
-				AverageOverMillis: c.AverageOverMillis, SamplesPerSecond: c.SamplesPerSecond,
-			}, b.logger))
-	}
-
-	for name := range b.analogReaders {
-		if _, ok := stillExists[name]; ok {
-			continue
-		}
-		b.analogReaders[name].reset(ctx, "", nil)
-		delete(b.analogReaders, name)
-	}
-	return nil
-}
-
 // This helper function is used while reconfiguring digital interrupts. It finds the new config (if
 // any) for a pre-existing digital interrupt.
 func findNewDigIntConfig(
@@ -285,80 +235,6 @@ func findNewDigIntConfig(
 	return nil
 }
 
-func (b *pinctrlpi5) reconfigureInterrupts(newConf *LinuxBoardConfig) error {
-	// Any pin that already exists in the right configuration should just be copied over; closing
-	// and re-opening it risks losing its state.
-	newInterrupts := make(map[string]*digitalInterrupt, len(newConf.DigitalInterrupts))
-
-	// Reuse any old interrupts that have new configs
-	for _, oldInterrupt := range b.interrupts {
-		if newConfig := findNewDigIntConfig(oldInterrupt, newConf.DigitalInterrupts, b.logger); newConfig == nil {
-			// The old interrupt shouldn't exist any more, but it probably became a GPIO pin.
-			if err := oldInterrupt.Close(); err != nil {
-				return err
-			}
-			if newGpioConfig, ok := b.gpioMappings[oldInterrupt.config.Pin]; ok {
-				b.gpios[oldInterrupt.config.Pin] = b.createGpioPin(newGpioConfig)
-			} else {
-				b.logger.Warnf("Old interrupt pin was on nonexistent GPIO pin '%s', ignoring",
-					oldInterrupt.config.Pin)
-			}
-		} else { // The old interrupt should stick around.
-			oldInterrupt.UpdateConfig(*newConfig)
-			newInterrupts[newConfig.Name] = oldInterrupt
-		}
-	}
-	oldInterrupts := b.interrupts
-	b.interrupts = newInterrupts
-
-	// Add any new interrupts that should be freshly made.
-	for _, config := range newConf.DigitalInterrupts {
-		if interrupt, ok := b.interrupts[config.Name]; ok {
-			if interrupt.config.Pin == config.Pin {
-				continue // Already initialized; keep going
-			}
-			// If the interrupt's name matches but the pin does not, the interrupt we already have
-			// was implicitly created (e.g., its name is "38" so we created it on pin 38 even
-			// though it was not explicitly mentioned in the old board config), but the new config
-			// is explicit (e.g., its name is still "38" but it's been moved to pin 37). Close the
-			// old one and initialize it anew.
-			if err := interrupt.Close(); err != nil {
-				return err
-			}
-			// Although we delete the implicit interrupt from b.interrupts, it's still in
-			// oldInterrupts, so we haven't lost the channels it reports to and can still copy them
-			// over to the new struct, if necessary.
-			delete(b.interrupts, config.Name)
-		}
-
-		if oldPin, ok := b.gpios[config.Pin]; ok {
-			if err := oldPin.Close(); err != nil {
-				return err
-			}
-			delete(b.gpios, config.Pin)
-		}
-
-		// If there was an old interrupt pin with this same name, anything subscribed to the old
-		// pin should still be subscribed to the new one.
-		oldInterrupt, ok := oldInterrupts[config.Name]
-		if !ok {
-			oldInterrupt = nil
-		}
-
-		gpioMapping, ok := b.gpioMappings[config.Name]
-		if !ok {
-			return fmt.Errorf("cannot create digital interrupt on unknown pin %s", config.Name)
-		}
-		interrupt, err := newDigitalInterrupt(config, gpioMapping, oldInterrupt)
-		if err != nil {
-			return err
-		}
-		b.interrupts[config.Name] = interrupt
-	}
-
-	return nil
-}
-
 func (b *pinctrlpi5) createGpioPin(mapping GPIOBoardMapping) *gpioPin {
 	pin := gpioPin{
 		boardWorkers: &b.activeBackgroundWorkers,
@@ -379,9 +255,8 @@ type pinctrlpi5 struct {
 	mu            sync.RWMutex
 	convertConfig ConfigConverter
 
-	gpioMappings  map[string]GPIOBoardMapping
-	analogReaders map[string]*wrappedAnalogReader
-	logger        logging.Logger
+	gpioMappings map[string]GPIOBoardMapping
+	logger       logging.Logger
 
 	gpios      map[string]*gpioPin
 	interrupts map[string]*digitalInterrupt
@@ -390,7 +265,7 @@ type pinctrlpi5 struct {
 	dtBaseNodePath string    // file path referring to base of device tree: /proc/device-tree
 	gpioNodePath   string    // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
 	virtAddr       *byte     // base address of mapped virtual page referencing the gpio chip data
-	physAddr       uint64    // base addres of the gpio chip data in dev/mem/
+	physAddr       uint64    // base address of the gpio chip data in dev/mem/
 	chipSize       uint64    // length of chip's address space in memory
 	memFile        *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
 	vPage          mmap.MMap // virtual page pointing to dev/gpiomem's physical page in memory. Need to keep track of this for cleanup
@@ -402,11 +277,7 @@ type pinctrlpi5 struct {
 
 // AnalogByName returns the analog pin by the given name if it exists.
 func (b *pinctrlpi5) AnalogByName(name string) (board.Analog, error) {
-	a, ok := b.analogReaders[name]
-	if !ok {
-		return nil, errors.Errorf("can't find AnalogReader (%s)", name)
-	}
-	return a, nil
+	return nil, errors.New("analogs not supported")
 }
 
 // DigitalInterruptByName returns the interrupt by the given name if it exists.
@@ -449,11 +320,7 @@ func (b *pinctrlpi5) DigitalInterruptByName(name string) (board.DigitalInterrupt
 
 // AnalogNames returns the names of all known analog pins.
 func (b *pinctrlpi5) AnalogNames() []string {
-	names := []string{}
-	for k := range b.analogReaders {
-		names = append(names, k)
-	}
-	return names
+	return []string{}
 }
 
 // DigitalInterruptNames returns the names of all known digital interrupts.
@@ -543,9 +410,6 @@ func (b *pinctrlpi5) Close(ctx context.Context) error {
 	}
 	for _, interrupt := range b.interrupts {
 		err = multierr.Combine(err, interrupt.Close())
-	}
-	for _, reader := range b.analogReaders {
-		err = multierr.Combine(err, reader.Close(ctx))
 	}
 	return err
 }
