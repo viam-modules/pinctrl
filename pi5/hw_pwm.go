@@ -198,10 +198,10 @@ func getGPIOPinAddress(GPIONumber int) (int64, error) {
 		if bankDivisions[i] <= GPIONumber && GPIONumber < bankDivisions[i+1] {
 
 			bankNum := i
-			bankBaseAddr := fselBankOffsets[bankNum]
+			bankBaseAddr := bankOffsets[bankNum]
 			pinBankOffset := GPIONumber - bankDivisions[i]
 
-			pinAddressOffset := bankBaseAddr + bankHeaderSizeBytes + ((pinBankOffset) * fselPinDataSize)
+			pinAddressOffset := bankBaseAddr + bankHeaderSizeBytes + ((pinBankOffset) * pinDataSize)
 			return int64(pinAddressOffset), nil
 		}
 	}
@@ -222,7 +222,7 @@ func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 
 	// find pin data within virtual page; retrieve the 4th byte from the pin data
 	vPage := *(pwm.gpioChipVPagePtr)
-	pinBytes := vPage[pinAddress : pinAddress+fselPinDataSize]
+	pinBytes := vPage[pinAddress : pinAddress+pinDataSize]
 	altModeByte := pinBytes[altModeIndex]
 
 	// We keep the left half of the byte preserved, only modifying the right half

@@ -26,11 +26,11 @@ type rangeInfo struct {
 	addrSpaceSize uint64
 }
 
-// Pin FSEL 'Alternative Modes' Information
-const fselBank0Offset = 0x0000
-const fselBank1Offset = 0x4000
-const fselBank2Offset = 0x8000
-const fselPinDataSize = 0x8 // in bytes. 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
+// GPIO Pin / Bank Information for 'Alternative Modes'. in Raspberry Pi documentation & code, Alternative Mode information is denoted using FSEL
+const bank0Offset = 0x0000
+const bank1Offset = 0x4000
+const bank2Offset = 0x8000
+const pinDataSize = 0x8 // in bytes. 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
 
 const (
 	ALT1 byte = 0x01
@@ -56,7 +56,7 @@ Each group of pins belongs to a bank, which has its own portion of memory in the
 maxGPIOPins is required as an upper bound for the pin number.
 */
 var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
-var fselBankOffsets = []int{fselBank0Offset, fselBank1Offset, fselBank2Offset}
+var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
 
 // removes nonprintable characters + other random characters from file path before opening files in device tree
 func cleanFilePath(childNodePath string) string {
