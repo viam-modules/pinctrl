@@ -25,6 +25,24 @@ import (
 // microsecond. We'll use 1 millisecond, for added confidence that all boards should support it.
 const safePeriodNs = 1e6
 
+/*
+These modes are used during pin control. Depending on which mode we'd like a pwm pin to
+be in (either GPIO or PWM), we overwrite a pin's mode data with one of these values.
+
+Note: Based on my (Maria's) experimentation, I'm pretty sure that ALT5 is the 'default' mode that tells the processor not
+to use alternative modes at all. In the pi5 library, they denote that SYS_RIO = ALT5, and my assumption here is
+that RIO = regular input output. regardless of whether I set a pin's mode to IP or OP, it the byte is still set to ALT5.
+GPIO usage uses different banks, addresses, registers, etc, so I'm pretty sure this is a way of telling the processor it
+shouldn't be using the alternative mode data at all.
+*/
+const (
+	ALT3 byte = 0x03 // PWM MODE
+	ALT5 byte = 0x05 // GPIO MODE
+
+	HPWM_MODE byte = ALT3
+	GPIO_MODE byte = ALT5
+)
+
 type pwmDevice struct {
 	chipPath string
 	line     int

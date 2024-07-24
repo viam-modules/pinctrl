@@ -29,33 +29,15 @@ type rangeInfo struct {
 /*
 GPIO Pin / Bank Information for 'Alternative Modes'. In Raspberry Pi documentation & code,
 Alternative Mode information is denoted using FSEL.
-Banks are offset set amounts away from the base of the gpiochip base address:
+
+Each group of pins belongs to a bank, which has its own portion of memory in the gpio chip.
+Each bank has its own base address, which is a fixed offset from the base address of the virtual page pointing to the gpio chip data in memory:
+
 	bank0 = 0x0000
 	bank1 = 0x4000
 	bank2 = 0x8000
-Typical use of the Pi5 only involves bank 0, which supports GPIO Pins 1-27, so the other offsets can be commented out.
-*/
 
-const bank0Offset = 0x0000
-const pinDataSize = 0x8 // in bytes. 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
-
-const (
-	ALT3 byte = 0x03 // PWM MODE
-	ALT5 byte = 0x05 // GPIO MODE
-
-	HPWM_MODE byte = ALT3
-	GPIO_MODE byte = ALT5
-
-	NULL byte = 0x1f
-)
-
-const maxGPIOPins = 27 // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
-
-/*
-Each group of pins belongs to a bank, which has its own portion of memory in the gpio chip.
-Each bank has its own base address, which is a fixed offset from the base address of the virtual page.
-
-bankDivisions stores the GPIO# of the first pin in each bank. Here, there are 3 banks:
+'bankDivisions' stores the GPIO# of the first pin in each bank. Here, there are 3 banks:
 
 	Bank0: GPIO pins 1-27
 	Bank1: GPIO pins 28-33
@@ -63,12 +45,17 @@ bankDivisions stores the GPIO# of the first pin in each bank. Here, there are 3 
 
 maxGPIOPins provides an upper bound for the pin number when calculating what bank a GPIO pin belongs to.
 
+Typical use of the Pi5 only involves bank 0, which supports GPIO Pins 1-27, so the other offsets can be commented out.
 If we ever wanted to support more than the 27 GPIO Pins on the standard pi5 board, these would be relevant:
-var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
-var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
+	var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
+	var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
 
 Since all of our pins are stored in bank0, we only retrieve pin data from bank0.
 */
+
+const bank0Offset = 0x0000
+const pinDataSize = 0x8 // in bytes. 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
+const maxGPIOPins = 27  // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
 
 // Removes nonprintable characters + other random characters from file path before opening files in device tree
 func cleanFilePath(childNodePath string) string {
