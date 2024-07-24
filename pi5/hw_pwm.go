@@ -53,11 +53,11 @@ type pwmDevice struct {
 
 	// virtual page that maps to memory associated with gpiochip0. We will overwrite bytes
 	// here to change a pin's mode from GPIO mode to HWPWM mode.
-	gpioChipVPagePtr *mmap.MMap
+	gpioChipVPage *mmap.MMap
 }
 
-func newPwmDevice(chipPath string, line int, logger logging.Logger, gpioChipVPagePtr *mmap.MMap) *pwmDevice {
-	return &pwmDevice{chipPath: chipPath, line: line, logger: logger, gpioChipVPagePtr: gpioChipVPagePtr}
+func newPwmDevice(chipPath string, line int, logger logging.Logger, gpioChipVPage *mmap.MMap) *pwmDevice {
+	return &pwmDevice{chipPath: chipPath, line: line, logger: logger, gpioChipVPage: gpioChipVPage}
 }
 
 func writeValue(filepath string, value uint64, logger logging.Logger) error {
@@ -219,7 +219,7 @@ func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 	}
 
 	// find pin data within virtual page; retrieve the 4th byte from the pin data
-	vPage := *(pwm.gpioChipVPagePtr)
+	vPage := *(pwm.gpioChipVPage)
 	pinBytes := vPage[pinAddress : pinAddress+pinDataSize]
 	altModeByte := pinBytes[altModeIndex]
 
