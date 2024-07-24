@@ -26,8 +26,8 @@ type rangeInfo struct {
 }
 
 /*
-GPIO Pin / Bank Information for 'Alternative Modes'. In Raspberry Pi documentation & code,
-Alternative Mode information is denoted using FSEL.
+GPIO Pin / Bank Information for 'Alternative Modes'.
+** Note: In Raspberry Pi documentation & code, alternative Mode information is generally denoted using the keyword FSEL (function select) **
 
 Each group of pins belongs to a bank, which has its own portion of memory in the gpio chip.
 Each bank has its own base address, which is a fixed offset from the base address of the virtual page pointing to the gpio chip data in memory:

@@ -39,7 +39,7 @@ const (
 	ALT3 byte = 0x03 // PWM MODE
 	ALT5 byte = 0x05 // GPIO MODE
 
-	HPWMMode byte = ALT3
+	PWMMode  byte = ALT3
 	GPIOMode byte = ALT5
 )
 
@@ -195,29 +195,7 @@ func (pwm *pwmDevice) callGPIOReadall() {
 	}
 }
 
-/*
-For all pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
-For a given pin, this method determines:
- 1. which bank the pin belongs to
- 2. the starting address of its 8 byte data chunk
-*/
-func getGPIOPinAddress(GPIONumber int) (int64, error) {
-
-	// Regarding the header: I (Maria) am unsure about what is stored here. It might just be GPIO 0.
-	// In that case, banks1 & 2 would be wrong for including the header in offset calcs.
-	bankHeaderSizeBytes := 8 // 8 bytes of either header data assosciated with a bank
-
-	if !(1 <= GPIONumber && GPIONumber <= maxGPIOPins) {
-		return -1, errors.New("pin is out of bank range")
-	}
-
-	// If we were using more than 1 bank, we'd have to subtract the GPIO Pin# from the first Pin of a given bank. See Maria's Guide to Pi5 Pincontrol for more info
-	pinBankOffset := GPIONumber
-	pinAddressOffset := bank0Offset + bankHeaderSizeBytes + ((pinBankOffset) * pinDataSize)
-	return int64(pinAddressOffset), nil
-}
-
-// Helper Function for SetPinMode. This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
+// Helper Function for SetPinMode. writeToPinModeByte() updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
 func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 
 	/*
@@ -260,6 +238,28 @@ func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 }
 
 /*
+For all pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
+For a given pin, this method determines:
+ 1. which bank the pin belongs to
+ 2. the starting address of its 8 byte data chunk
+*/
+func getGPIOPinAddress(GPIONumber int) (int64, error) {
+
+	// Regarding the header: I (Maria) am unsure about what is stored here. It might just be GPIO 0.
+	// In that case, banks1 & 2 would be wrong for including the header in offset calcs.
+	bankHeaderSizeBytes := 8 // 8 bytes of either header data assosciated with a bank
+
+	if !(1 <= GPIONumber && GPIONumber <= maxGPIOPins) {
+		return -1, errors.New("pin is out of bank range")
+	}
+
+	// If we were using more than 1 bank, we'd have to subtract the GPIO Pin# from the first Pin of a given bank. See Maria's Guide to Pi5 Pincontrol for more info
+	pinBankOffset := GPIONumber
+	pinAddressOffset := bank0Offset + bankHeaderSizeBytes + ((pinBankOffset) * pinDataSize)
+	return int64(pinAddressOffset), nil
+}
+
+/*
 This function uses pwm.line to determine what GPIO Pin it needs to set to the inputted mode
 Each pwm line corresponds to a GPIO Pin. The pi5 mapping is:
 
@@ -270,7 +270,7 @@ Each pwm line corresponds to a GPIO Pin. The pi5 mapping is:
 
 Other mappings for different pis can be found here:  https://pypi.org/project/rpi-hardware-pwm/#modal-close
 
-Use the writeToPinModeByte to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'HPWMMode' or 'GPIO'
+Use the writeToPinModeByte to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'PWMMode' or 'GPIO'
 */
 func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
 	switch pwm.line {
@@ -301,8 +301,7 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 	}()
 
 	// Set pin mode to hardware pwm enabled before using for PWM.
-	// function uses pwm.line to determine what GPIO Pin it needs to set to the inputted mode.
-	if err := pwm.SetPinMode(HPWMMode); err != nil {
+	if err := pwm.SetPinMode(PWMMode); err != nil {
 		return err
 	}
 
