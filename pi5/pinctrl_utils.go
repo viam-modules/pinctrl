@@ -51,14 +51,21 @@ const (
 const maxGPIOPins = 54 // this is the max number of GPIO Pins supported by the pi5. On a pi5 without peripherals, there are 28 GPIO Pins.
 
 /*
-bankDivisions stores the GPIO# of the first pin in each bank. Here, there are 3 banks.
 Each group of pins belongs to a bank, which has its own portion of memory in the gpio chip.
-maxGPIOPins is required as an upper bound for the pin number.
+Each bank has its own base address, which is a fixed offset from the base address of the virtual page.
+
+bankDivisions stores the GPIO# of the first pin in each bank. Here, there are 3 banks:
+
+	Bank0: GPIO pins 1-27
+	Bank1: GPIO pins 28-33
+	Bank2: GPIO pins 34-54
+
+maxGPIOPins provides an upper bound for the pin number when calculating what bank a GPIO pin belongs to.
 */
 var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
 var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
 
-// removes nonprintable characters + other random characters from file path before opening files in device tree
+// Removes nonprintable characters + other random characters from file path before opening files in device tree
 func cleanFilePath(childNodePath string) string {
 	childNodePath = strings.TrimSpace(childNodePath)
 	// TODO: Determine which random non printable character(s) are causing our file path to be invalid, and change the reg expression to only sanitize those characters.
@@ -81,7 +88,7 @@ func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
 	return nodePath, err
 }
 
-// read in 'numCells' 32 bit chunks from byteContents, the bytestream outputted from reading the file '/ranges'. Convert bytes into their uint64 value
+// Read in 'numCells' 32 bit chunks from byteContents, the bytestream outputted from reading the file '/ranges'. Convert bytes into their uint64 value
 func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	var parsedValue uint64
 
@@ -184,7 +191,7 @@ func getRangesAddr(childNodePath string, numCAddrCells uint32, numPAddrCells uin
 	return addrRanges, err
 }
 
-// Recursively Traverses Device Tree to Calcuate Physical Address of specified GPIO Chip
+// Recursively traverses device tree to calcuate physical address of specified GPIO chip
 func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddrCells uint32) (uint64, error) {
 
 	invalidAddr := uint64(math.NaN())
@@ -229,7 +236,7 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 	return setGPIONodePhysAddrHelper(currNodePath, physAddress, numCAddrCells)
 }
 
-// Uses Information Stored within the 'reg' property of the child node and 'ranges' property of its parents to map the child's physical address into the dev/gpiomem space
+// Uses information stored within the 'reg' property of the child node and 'ranges' property of its parents to map the child's physical address into the dev/gpiomem space
 func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 
 	var err error
@@ -248,7 +255,7 @@ func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 	return nil
 }
 
-// Creates a virtual Page to access/manipulate memory related to gpiochip data
+// Creates a virtual page to access/manipulate memory related to gpiochip data
 func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	var err error
 
@@ -296,7 +303,7 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	return err
 }
 
-// Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
+// Sets up GPIO pin memory access by parsing the device tree for relevant address information
 func (b *pinctrlpi5) setupPinControl() error {
 
 	// TODO: "gpio0" is hardcoded as the gpioName. This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
