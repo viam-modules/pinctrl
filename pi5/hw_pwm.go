@@ -218,10 +218,18 @@ func getGPIOPinAddress(GPIONumber int) (int64, error) {
 	return int64(pinAddressOffset), nil
 }
 
-// This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
+// Helper Function for SetPinMode. This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
 func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 
-	// Of the 8 bytes that represent a given pin's data, only the 4th index corresponds to the alternative mode setting
+	/*
+		Of the 8 bytes representing all of a given pin's data, 4 bytes are allocated for alternative modes.
+		However, you only need 1 byte to represent all the modes because
+		1 byte = 8 bits
+		8 modes can be represented by 3 bits
+
+		In practice, only 1 byte is changed and the rest are just 0xff's. The index of that byte in the entire chunk of pin data is byte[4].
+	*/
+
 	altModeIndex := 4
 
 	pinAddress, err := getGPIOPinAddress(GPIONumber)
@@ -234,7 +242,7 @@ func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 	pinBytes := vPage[pinAddress : pinAddress+pinDataSize]
 	altModeByte := pinBytes[altModeIndex]
 
-	// We keep the left half of the byte preserved, only modifying the right half
+	// We keep the left half (4 bits) of the byte preserved, only modifying the right half
 	// Preserve Left Side of Byte using this Mask
 	leftSideMask := byte(0xf0)
 
