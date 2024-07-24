@@ -196,7 +196,6 @@ func getGPIOPinAddress(GPIONumber int) (int64, error) {
 
 	for i := 0; i < len(bankDivisions)-1; i++ {
 		if bankDivisions[i] <= GPIONumber && GPIONumber < bankDivisions[i+1] {
-
 			bankNum := i
 			bankBaseAddr := bankOffsets[bankNum]
 			pinBankOffset := GPIONumber - bankDivisions[i]

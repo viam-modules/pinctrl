@@ -61,6 +61,7 @@ var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
 // removes nonprintable characters + other random characters from file path before opening files in device tree
 func cleanFilePath(childNodePath string) string {
 	childNodePath = strings.TrimSpace(childNodePath)
+	// TODO: Determine which random non printable character(s) are causing our file path to be invalid, and change the reg expression to only sanitize those characters.
 	re := regexp.MustCompile(`[\x00-\x1F\x7F-\x9F]`) // gets rid of random non printable chars. works for now but make cleaner later
 	childNodePath = re.ReplaceAllString(childNodePath, "")
 	return childNodePath
@@ -297,7 +298,9 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 
 // Sets up GPIO Pin Memory Access by parsing the device tree for relevant address information
 func (b *pinctrlpi5) setupPinControl() error {
-	nodePath, err := b.findPathFromAlias(gpioName) // this ("gpio") is hardcoded now, we will fix that later!
+
+	// TODO: "gpio0" is hardcoded as the gpioName. This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
+	nodePath, err := b.findPathFromAlias(gpioName)
 	if err != nil {
 		b.logger.Errorf("error getting raspi5 GPIO nodePath")
 		return err
