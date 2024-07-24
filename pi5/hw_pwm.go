@@ -184,22 +184,22 @@ For a given pin, this method determines:
  1. which bank the pin belongs to
  2. the starting address of its 8 byte data chunk
 */
-func getGPIOPinAddress(gpioNumber int) (int64, error) {
+func getGPIOPinAddress(GPIONumber int) (int64, error) {
 
 	// Regarding the header: I (Maria) am unsure about what is stored here. It might just be GPIO 0.
 	// In that case, banks1 & 2 would be wrong for including the header in offset calcs.
 	bankHeaderSizeBytes := 8 // 8 bytes of either header data assosciated with a bank
 
-	if !(1 <= gpioNumber && gpioNumber <= maxGPIOPins) {
+	if !(1 <= GPIONumber && GPIONumber <= maxGPIOPins) {
 		return -1, errors.New("pin is out of bank range")
 	}
 
 	for i := 0; i < len(bankDivisions)-1; i++ {
-		if bankDivisions[i] <= gpioNumber && gpioNumber < bankDivisions[i+1] {
+		if bankDivisions[i] <= GPIONumber && GPIONumber < bankDivisions[i+1] {
 
 			bankNum := i
 			bankBaseAddr := fselBankOffsets[bankNum]
-			pinBankOffset := gpioNumber - bankDivisions[i]
+			pinBankOffset := GPIONumber - bankDivisions[i]
 
 			pinAddressOffset := bankBaseAddr + bankHeaderSizeBytes + ((pinBankOffset) * fselPinDataSize)
 			return int64(pinAddressOffset), nil
@@ -210,12 +210,12 @@ func getGPIOPinAddress(gpioNumber int) (int64, error) {
 }
 
 // This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
-func (pwm *pwmDevice) writeToPinModeByte(gpioNumber int, newMode byte) error {
+func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 
 	// Of the 8 bytes that represent a given pin's data, only the 4th index corresponds to the alternative mode setting
 	altModeIndex := 4
 
-	pinAddress, err := getGPIOPinAddress(gpioNumber)
+	pinAddress, err := getGPIOPinAddress(GPIONumber)
 	if err != nil {
 		return fmt.Errorf("error getting gpio bank number: %w", err)
 	}
