@@ -33,17 +33,11 @@ const bank2Offset = 0x8000
 const pinDataSize = 0x8 // in bytes. 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
 
 const (
-	ALT1 byte = 0x01
-	ALT2 byte = 0x02
 	ALT3 byte = 0x03 // PWM MODE
-	ALT4 byte = 0x04
 	ALT5 byte = 0x05 // GPIO MODE
-	ALT6 byte = 0x06
-	ALT7 byte = 0x07
-	ALT8 byte = 0x08
 
-	HPWM byte = ALT3
-	GPIO byte = ALT5
+	HPWM_MODE byte = ALT3
+	GPIO_MODE byte = ALT5
 
 	NULL byte = 0x1f
 )
@@ -89,16 +83,16 @@ func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
 }
 
 // Read in 'numCells' 32 bit chunks from byteContents, the bytestream outputted from reading the file '/ranges'. Convert bytes into their uint64 value
+// Remember that 1 cell is 32 bits, which is 4 bytes. This is why numCells is always multiplied by 4, ensuring we retrieve all 4 bytes associated with the cell.
 func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	var parsedValue uint64
 
 	if len(*byteContents) < int(numCells)*4 {
-		errorMsg := "num cells was: " + string(numCells) + ", but there aren't enough bytes to read in from inputted bytestream"
+		errorMsg := fmt.Sprintf("num cells was: %d, but there aren't enough bytes to read in from inputted bytestream (only %d)", numCells, len(*byteContents))
 		return 0, errors.New(errorMsg)
 	}
 
 	switch numCells {
-
 	// reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
 	case 1:
 		parsedValue = uint64(binary.BigEndian.Uint32((*byteContents)[:(4 * numCells)]))
@@ -107,7 +101,7 @@ func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	case 2:
 		parsedValue = binary.BigEndian.Uint64((*byteContents)[:(4 * numCells)])
 
-	// reading in more than 64 bits. we only want the last 64 bits of the address so we cut off the other portion
+	// reading in more than 64 bits. we only want the last 64 bits (2 cells) of the address so we cut off the other portion
 	default:
 		parsedValue = binary.BigEndian.Uint64((*byteContents)[(4 * (numCells - 2)):(4 * numCells)])
 	}
@@ -289,12 +283,12 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 		b.vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0)
 
 		***** for the mmap() call ****
-		- if we were using dev/mem, then offset = pageStart. the file we 'open' starts at the base address of gpio memory for chip 0, not at the base of memory.
+		- if we were using /dev/mem, then offset = pageStart. the file we 'open' starts at the base address of gpio memory for chip 0, not at the base of memory.
 		- we would access our memory by accessing vPage[dataStartingAddrDiff] if the start address of the data != page start address
 
 	*/
 
-	b.vPage, err = mmap.MapRegion(b.memFile, int(b.chipSize), mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from the beginning of the mem/gpiomem0 file. offs = pageStart if we opened dev/mem
+	b.vPage, err = mmap.MapRegion(b.memFile, int(b.chipSize), mmap.RDWR, 0, 0) // 0 flag = shared, 0 offset because we are starting from the beginning of the mem/gpiomem0 file. offs = pageStart if we opened /dev/mem
 	if err != nil {
 		return fmt.Errorf("failed to mmap: %w\n", err)
 	}
