@@ -235,7 +235,7 @@ func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 	invalidAddr := uint64(math.NaN())
 	numCAddrCells := uint32(0)
 
-	/* Call Recursive Function to Calculate Phys Addr. Works way up the Device Tree, using the information
+	/* Call recursive function to calculate phys addr. Works way up the device tree, using the information
 	found in #ranges at every node to translate from the child's address space to the parent's address space
 	until we get the child's physical address in all of /dev/gpiomem. */
 	b.physAddr, err = setGPIONodePhysAddrHelper(currNodePath, invalidAddr, numCAddrCells)
