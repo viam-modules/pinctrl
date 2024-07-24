@@ -48,8 +48,14 @@ const (
 	NULL byte = 0x1f
 )
 
-var maxPinNum = 40
-var bankDivisions = []int{1, 28, 34, maxPinNum + 1} // maxPinNum is required as an upper bound for the pin number
+const maxGPIOPins = 54 // this is the max number of GPIO Pins supported by the pi5. On a pi5 without peripherals, there are 28 GPIO Pins.
+
+/*
+bankDivisions stores the GPIO# of the first pin in each bank. Here, there are 3 banks.
+Each group of pins belongs to a bank, which has its own portion of memory in the gpio chip.
+maxGPIOPins is required as an upper bound for the pin number.
+*/
+var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
 var fselBankOffsets = []int{fselBank0Offset, fselBank1Offset, fselBank2Offset}
 
 // removes nonprintable characters + other random characters from file path before opening files in device tree
@@ -286,64 +292,6 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	}
 
 	b.virtAddr = &b.vPage[0]
-	return err
-}
-
-/*
-For all Pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
-For a given pin, this method determines:
- 1. which bank the pin belongs to
- 2. the starting address of its 8 byte data chunk
-*/
-func getPinAddressOffset(pinNumber int) (int64, error) {
-
-	bankHeaderSize := 8 // 8 bytes of either header data assosciated with a bank (unsure about what is stored here though)
-
-	if !(1 <= pinNumber && pinNumber <= maxPinNum) {
-		return -1, errors.New("pin is out of bank range")
-	}
-
-	for i := 0; i < len(bankDivisions)-1; i++ {
-		if bankDivisions[i] <= pinNumber && pinNumber < bankDivisions[i+1] {
-
-			bankNum := i
-			bankBaseAddr := fselBankOffsets[bankNum]
-			pinBankOffset := pinNumber - bankDivisions[i]
-
-			pinAddressOffset := bankBaseAddr + bankHeaderSize + ((pinBankOffset) * fselPinDataSize)
-			return int64(pinAddressOffset), nil
-		}
-	}
-
-	return -1, errors.New("pin in bank range but not set")
-}
-
-// This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
-func (b *pinctrlpi5) setPin(pinNumber int, newMode byte) error {
-
-	// Of the 8 bytes that represent a given pin's data, only the 4th index corresponds to the alternative mode setting
-	altModeIndex := 4
-
-	pinAddressOffset, err := getPinAddressOffset(pinNumber)
-	if err != nil {
-		return fmt.Errorf("error getting gpio bank number: %w", err)
-	}
-
-	// find pin data within virtual page; retrieve the 4th byte from the pin data
-	pinBytes := b.vPage[pinAddressOffset : pinAddressOffset+fselPinDataSize]
-	altModeByte := pinBytes[altModeIndex]
-
-	// We keep the left half of the byte preserved, only modifying the right half
-	// Preserve Left Side of Byte using this Mask
-	leftSideMask := byte(0xf0)
-
-	// Set Right Side of Byte ONLY using this Mask. Ensures left side cannot be overwritten
-	rightSideMask := byte(0x0f)
-
-	// Set new mode via write to correct while protecting previous other settings
-	newAltModeByte := (altModeByte & leftSideMask) | (newMode & rightSideMask)
-	pinBytes[4] = newAltModeByte
-
 	return err
 }
 

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	mmap "github.com/edsrzf/mmap-go"
 	"github.com/pkg/errors"
 	goutils "go.viam.com/utils"
 
@@ -31,11 +32,14 @@ type pwmDevice struct {
 	// We have no mutable state, but the mutex is used to write to multiple pseudofiles atomically.
 	mu     sync.Mutex
 	logger logging.Logger
-	board  *pinctrlpi5
+
+	// this is the virtual page that maps to memory associated with gpiochip0. We will overwrite bytes
+	// here to change a pin's mode from GPIO mode to HWPWM mode.
+	gpioChipVPagePtr *mmap.MMap
 }
 
-func newPwmDevice(chipPath string, line int, board *pinctrlpi5) *pwmDevice {
-	return &pwmDevice{chipPath: chipPath, line: line, logger: board.logger, board: board}
+func newPwmDevice(chipPath string, line int, logger logging.Logger, gpioChipVPagePtr *mmap.MMap) *pwmDevice {
+	return &pwmDevice{chipPath: chipPath, line: line, logger: logger, gpioChipVPagePtr: gpioChipVPagePtr}
 }
 
 func writeValue(filepath string, value uint64, logger logging.Logger) error {
@@ -109,7 +113,8 @@ func (pwm *pwmDevice) unexport() error {
 		return err
 	}
 
-	// set mode here gpio, should a be redundant call because switching to GPIO happens implicitly
+	// This should a be redundant call because switching to GPIO happens implicitly.
+	// function uses pwm.line to determine what GPIO Pin it needs to set to the inputted mode.
 	if err := pwm.SetPinMode(GPIO); err != nil {
 		return err
 	}
@@ -174,32 +179,91 @@ func (pwm *pwmDevice) callGPIOReadall() {
 }
 
 /*
+For all Pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
+For a given pin, this method determines:
+ 1. which bank the pin belongs to
+ 2. the starting address of its 8 byte data chunk
+*/
+func getGPIOPinAddress(gpioNumber int) (int64, error) {
+
+	// Regarding the header: I (Maria) am unsure about what is stored here. It might just be GPIO 0.
+	// In that case, banks1 & 2 would be wrong for including the header in offset calcs.
+	bankHeaderSizeBytes := 8 // 8 bytes of either header data assosciated with a bank
+
+	if !(1 <= gpioNumber && gpioNumber <= maxGPIOPins) {
+		return -1, errors.New("pin is out of bank range")
+	}
+
+	for i := 0; i < len(bankDivisions)-1; i++ {
+		if bankDivisions[i] <= gpioNumber && gpioNumber < bankDivisions[i+1] {
+
+			bankNum := i
+			bankBaseAddr := fselBankOffsets[bankNum]
+			pinBankOffset := gpioNumber - bankDivisions[i]
+
+			pinAddressOffset := bankBaseAddr + bankHeaderSizeBytes + ((pinBankOffset) * fselPinDataSize)
+			return int64(pinAddressOffset), nil
+		}
+	}
+
+	return -1, errors.New("pin in bank range but not set")
+}
+
+// This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
+func (pwm *pwmDevice) writeToPinModeByte(gpioNumber int, newMode byte) error {
+
+	// Of the 8 bytes that represent a given pin's data, only the 4th index corresponds to the alternative mode setting
+	altModeIndex := 4
+
+	pinAddress, err := getGPIOPinAddress(gpioNumber)
+	if err != nil {
+		return fmt.Errorf("error getting gpio bank number: %w", err)
+	}
+
+	// find pin data within virtual page; retrieve the 4th byte from the pin data
+	vPage := *(pwm.gpioChipVPagePtr)
+	pinBytes := vPage[pinAddress : pinAddress+fselPinDataSize]
+	altModeByte := pinBytes[altModeIndex]
+
+	// We keep the left half of the byte preserved, only modifying the right half
+	// Preserve Left Side of Byte using this Mask
+	leftSideMask := byte(0xf0)
+
+	// Set Right Side of Byte ONLY using this Mask. Ensures left side cannot be overwritten
+	rightSideMask := byte(0x0f)
+
+	// Set new mode via write to correct while protecting previous other settings
+	newAltModeByte := (altModeByte & leftSideMask) | (newMode & rightSideMask)
+	pinBytes[4] = newAltModeByte
+
+	return nil
+}
+
+/*
 Each pwm line corresponds to a GPIO Pin. The pi5 mapping is:
 
-	Line 0 -> GPIO 12
-	Line 1 -> GPIO 13
-	Line 2 -> GPIO 18
-	Line 3 -> GPIO 19
+	PWM Line 0 -> GPIO 12
+	PWM Line 1 -> GPIO 13
+	PWM Line 2 -> GPIO 18
+	PWM Line 3 -> GPIO 19
 
 Other mappings for different pis can be found here:  https://pypi.org/project/rpi-hardware-pwm/#modal-close
 
-Use the board.setPin to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'HPWM' or 'GPIO'
+Use the writeToPinModeByte to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'HPWM' or 'GPIO'
 */
 func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
 	switch pwm.line {
 	case 0:
-		err = pwm.board.setPin(12, pinMode)
+		err = pwm.writeToPinModeByte(12, pinMode)
 	case 1:
-		err = pwm.board.setPin(13, pinMode)
+		err = pwm.writeToPinModeByte(13, pinMode)
 	case 2:
-		err = pwm.board.setPin(18, pinMode)
+		err = pwm.writeToPinModeByte(18, pinMode)
 	case 3:
-		err = pwm.board.setPin(19, pinMode)
-	default:
-		return errors.New("attemping to set PWM pin mode but pwm line is not valid")
+		err = pwm.writeToPinModeByte(19, pinMode)
 	}
 
-	return err
+	return nil
 }
 
 // SetPwm configures an exported pin and enables its output signal.
@@ -216,7 +280,7 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 	}()
 
 	// Set pin mode to hardware pwm enabled before using for PWM.
-	// Helper method uses 'pwm.line' to determine which pin's mode needs to be updated.
+	// function uses pwm.line to determine what GPIO Pin it needs to set to the inputted mode.
 	if err := pwm.SetPinMode(HPWM); err != nil {
 		return err
 	}
