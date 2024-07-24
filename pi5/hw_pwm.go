@@ -222,19 +222,23 @@ func getGPIOPinAddress(GPIONumber int) (int64, error) {
 func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 
 	/*
-		Of the 8 bytes representing all of a given pin's data, 4 bytes are allocated for alternative modes.
-		However, you only need 1 byte to represent all the modes because
-		1 byte = 8 bits
-		8 modes can be represented by 3 bits
+		Of the 8 bytes representing all of a given pin's data:
+			pinBytes[0:3] -> bytes are allocated for 'status' modes (still unsure of what status does).
+			pinBytes[4:7] -> bytes are allocated for alternative modes.
 
-		In practice, only 1 byte is changed and the rest are just 0xff's. The index of that byte in the entire chunk of pin data is byte[4].
+		However, you only need 1 byte to represent all the modes because
+			1 byte = 8 bits
+			8 modes can be represented by 3 bits
+
+		In practice, only 1 of the mode bytes is changed and the rest are just 0xff's.
+		The index of that byte in the entire chunk of pin data is pinBytes[4].
 	*/
 
 	altModeIndex := 4
 
 	pinAddress, err := getGPIOPinAddress(GPIONumber)
 	if err != nil {
-		return fmt.Errorf("error getting gpio bank number: %w", err)
+		return fmt.Errorf("error getting gpio pin address: %w", err)
 	}
 
 	// find pin data within virtual page; retrieve the 4th byte from the pin data
