@@ -57,7 +57,7 @@ const bank0Offset = 0x0000
 const pinDataSize = 0x8 // in bytes. 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
 const maxGPIOPins = 27  // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
 
-// Removes nonprintable characters + other random characters from file path before opening files in device tree
+// Cleans file path before opening files in device tree
 func cleanFilePath(childNodePath string) string {
 	childNodePath = strings.TrimSpace(childNodePath)
 	re := regexp.MustCompile(`[\x00]`) // gets rid of Null Characters in File Path
