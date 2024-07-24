@@ -39,8 +39,8 @@ const (
 	ALT3 byte = 0x03 // PWM MODE
 	ALT5 byte = 0x05 // GPIO MODE
 
-	HPWM_MODE byte = ALT3
-	GPIO_MODE byte = ALT5
+	HPWMMode byte = ALT3
+	GPIOMode byte = ALT5
 )
 
 type pwmDevice struct {
@@ -132,8 +132,7 @@ func (pwm *pwmDevice) unexport() error {
 	}
 
 	// This should a be redundant call because switching to GPIO happens implicitly.
-	// function uses pwm.line to determine what GPIO Pin it needs to set to the inputted mode.
-	if err := pwm.SetPinMode(GPIO_MODE); err != nil {
+	if err := pwm.SetPinMode(GPIOMode); err != nil {
 		return err
 	}
 
@@ -197,7 +196,7 @@ func (pwm *pwmDevice) callGPIOReadall() {
 }
 
 /*
-For all Pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
+For all pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
 For a given pin, this method determines:
  1. which bank the pin belongs to
  2. the starting address of its 8 byte data chunk
@@ -261,6 +260,7 @@ func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 }
 
 /*
+This function uses pwm.line to determine what GPIO Pin it needs to set to the inputted mode
 Each pwm line corresponds to a GPIO Pin. The pi5 mapping is:
 
 	PWM Line 0 -> GPIO 12
@@ -270,7 +270,7 @@ Each pwm line corresponds to a GPIO Pin. The pi5 mapping is:
 
 Other mappings for different pis can be found here:  https://pypi.org/project/rpi-hardware-pwm/#modal-close
 
-Use the writeToPinModeByte to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'HPWM_MODE' or 'GPIO'
+Use the writeToPinModeByte to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'HPWMMode' or 'GPIO'
 */
 func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
 	switch pwm.line {
@@ -302,7 +302,7 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 
 	// Set pin mode to hardware pwm enabled before using for PWM.
 	// function uses pwm.line to determine what GPIO Pin it needs to set to the inputted mode.
-	if err := pwm.SetPinMode(HPWM_MODE); err != nil {
+	if err := pwm.SetPinMode(HPWMMode); err != nil {
 		return err
 	}
 

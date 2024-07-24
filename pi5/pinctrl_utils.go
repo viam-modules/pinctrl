@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	mmap "github.com/edsrzf/mmap-go"
-	"github.com/pkg/errors"
 )
 
 const gpioName = "gpio0"
@@ -54,7 +53,7 @@ Since all of our pins are stored in bank0, we only retrieve pin data from bank0.
 */
 
 const bank0Offset = 0x0000
-const pinDataSize = 0x8 // in bytes. 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
+const pinDataSize = 0x8 // 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
 const maxGPIOPins = 27  // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
 
 // Cleans file path before opening files in device tree
@@ -85,8 +84,7 @@ func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	var parsedValue uint64
 
 	if len(*byteContents) < int(numCells)*4 {
-		errorMsg := fmt.Sprintf("num cells was: %d, but there aren't enough bytes to read in from inputted bytestream (only %d)", numCells, len(*byteContents))
-		return 0, errors.New(errorMsg)
+		return 0, fmt.Errorf("num cells was: %d, but there aren't enough bytes to read in from inputted bytestream (only %d)", numCells, len(*byteContents))
 	}
 
 	switch numCells {
