@@ -51,7 +51,7 @@ type pwmDevice struct {
 	mu     sync.Mutex
 	logger logging.Logger
 
-	// this is the virtual page that maps to memory associated with gpiochip0. We will overwrite bytes
+	// virtual page that maps to memory associated with gpiochip0. We will overwrite bytes
 	// here to change a pin's mode from GPIO mode to HWPWM mode.
 	gpioChipVPagePtr *mmap.MMap
 }
