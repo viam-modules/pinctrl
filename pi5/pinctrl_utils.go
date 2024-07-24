@@ -79,7 +79,7 @@ func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
 }
 
 // Read in 'numCells' 32 bit chunks from byteContents, the bytestream outputted from reading the file '/ranges'. Convert bytes into their uint64 value
-// Remember that 1 cell is 32 bits, which is 4 bytes. This is why numCells is always multiplied by 4, ensuring we retrieve all 4 bytes associated with the cell.
+// Note that that 1 cell is 32 bits, (4 bytes).  numCells is multiplied by 4 to retrieve all 4 bytes associated with the cell.
 func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	var parsedValue uint64
 

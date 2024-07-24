@@ -266,7 +266,7 @@ func findNewDigIntConfig(
 		}
 	}
 	if interrupt.config.Name == interrupt.config.Pin {
-		// This interrupt is named identiy to its pin. It was probably created on the fly
+		// This interrupt is named identically to its pin. It was probably created on the fly
 		// by some other component (an encoder?). Unless there's now some other config with the
 		// same name but on a different pin, keep it initialized as-is.
 		for _, intConfig := range confs {
