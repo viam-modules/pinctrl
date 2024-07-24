@@ -206,7 +206,7 @@ func getGPIOPinAddress(GPIONumber int) (int64, error) {
 
 	// Regarding the header: I (Maria) am unsure about what is stored here. It might just be GPIO 0.
 	// In that case, banks1 & 2 would be wrong for including the header in offset calcs.
-	bankHeaderSizeBytes := 8 // 8 bytes of either header data assosciated with a bank
+	bankHeaderSizeBytes := 8 // 8 bytes of either header data associated with a bank
 
 	if !(1 <= GPIONumber && GPIONumber <= maxGPIOPins) {
 		return -1, errors.New("pin is out of bank range")
