@@ -255,7 +255,7 @@ func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
 
 	// Set new mode via write to correct while protecting previous other settings
 	newAltModeByte := (altModeByte & leftSideMask) | (newMode & rightSideMask)
-	pinBytes[4] = newAltModeByte
+	pinBytes[altModeIndex] = newAltModeByte
 
 	return nil
 }
