@@ -271,6 +271,8 @@ Each pwm line corresponds to a GPIO Pin. The pi5 mapping is:
 Other mappings for different pis can be found here:  https://pypi.org/project/rpi-hardware-pwm/#modal-close
 
 Use the writeToPinModeByte to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'PWMMode' or 'GPIO'
+
+TODO: Make writing to GPIO Pins generalizeable, and not dependent on the pwm following this exact structure
 */
 func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
 	switch pwm.line {
