@@ -194,18 +194,10 @@ func getGPIOPinAddress(GPIONumber int) (int64, error) {
 		return -1, errors.New("pin is out of bank range")
 	}
 
-	for i := 0; i < len(bankDivisions)-1; i++ {
-		if bankDivisions[i] <= GPIONumber && GPIONumber < bankDivisions[i+1] {
-			bankNum := i
-			bankBaseAddr := bankOffsets[bankNum]
-			pinBankOffset := GPIONumber - bankDivisions[i]
-
-			pinAddressOffset := bankBaseAddr + bankHeaderSizeBytes + ((pinBankOffset) * pinDataSize)
-			return int64(pinAddressOffset), nil
-		}
-	}
-
-	return -1, errors.New("pin in bank range but not set")
+	// If we were using more than 1 bank, we'd have to subtract the GPIO Pin# from the first Pin of a given bank. See Maria's Guide to Pi5 Pincontrol for more info
+	pinBankOffset := GPIONumber
+	pinAddressOffset := bank0Offset + bankHeaderSizeBytes + ((pinBankOffset) * pinDataSize)
+	return int64(pinAddressOffset), nil
 }
 
 // This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
