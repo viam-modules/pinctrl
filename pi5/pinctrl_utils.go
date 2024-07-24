@@ -60,8 +60,7 @@ const maxGPIOPins = 27  // On a pi5 without peripherals, there are 27 GPIO Pins.
 // Removes nonprintable characters + other random characters from file path before opening files in device tree
 func cleanFilePath(childNodePath string) string {
 	childNodePath = strings.TrimSpace(childNodePath)
-	// TODO: Determine which random non printable character(s) are causing our file path to be invalid, and change the reg expression to only sanitize those characters.
-	re := regexp.MustCompile(`[\x00-\x1F\x7F-\x9F]`) // gets rid of random non printable chars. works for now but make cleaner later
+	re := regexp.MustCompile(`[\x00]`) // gets rid of Null Characters in File Path
 	childNodePath = re.ReplaceAllString(childNodePath, "")
 	return childNodePath
 }
