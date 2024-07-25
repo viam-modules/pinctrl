@@ -265,7 +265,7 @@ type pinctrlpi5 struct {
 	dtBaseNodePath string    // file path referring to base of device tree: /proc/device-tree
 	gpioNodePath   string    // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
 	virtAddr       *byte     // base address of mapped virtual page referencing the gpio chip data
-	physAddr       uint64    // base address of the gpio chip data in dev/mem/
+	physAddr       uint64    // base address of the gpio chip data in /dev/mem/
 	chipSize       uint64    // length of chip's address space in memory
 	memFile        *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
 	vPage          mmap.MMap // virtual page pointing to dev/gpiomem's physical page in memory. Need to keep track of this for cleanup

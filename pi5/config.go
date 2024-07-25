@@ -7,13 +7,8 @@ import (
 	"go.viam.com/rdk/resource"
 )
 
-// A Config describes the configuration of a board and all of its connected parts.
 type Config struct {
-}
-
-// Validate ensures all parts of the config are valid.
-func (conf *Config) Validate(path string) ([]string, error) {
-	return nil, nil
+	resource.TriviallyValidateConfig
 }
 
 // LinuxBoardConfig is a struct containing absolutely everything a genericlinux board might need
