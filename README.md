@@ -1,4 +1,4 @@
-# [pinctrl module] (<https://github.com/mariapatni/pinctrl>)
+# [`pinctrl` module](<https://github.com/mariapatni/pinctrl>)
 
 The pinctrl module is a board module that accesses the hardware directly through /dev/mem.
 to control GPIO pins. Pinctrl allows boards to switch between hardware PWM and GPIO modes.
