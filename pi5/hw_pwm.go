@@ -253,18 +253,9 @@ func getGPIOPinAddress(GPIONumber int) (int64, error) {
 		return -1, errors.New("pin is out of bank range")
 	}
 
-	for i := 0; i < len(bankDivisions)-1; i++ {
-		if bankDivisions[i] <= GPIONumber && GPIONumber < bankDivisions[i+1] {
-			bankNum := i
-			bankBaseAddr := bankOffsets[bankNum]
-			pinBankOffset := GPIONumber - bankDivisions[i]
-
-			pinAddressOffset := bankBaseAddr + bankHeaderSizeBytes + ((pinBankOffset) * pinDataSize)
-			return int64(pinAddressOffset), nil
-		}
-	}
-
-	return -1, errors.New("pin in bank range but not set")
+	pinBankOffset := (GPIONumber - 1) // 1 is the number of starting GPIO Pin in Bank0 (GPIO #1)!
+	pinAddressOffset := bank0Offset + bankHeaderSizeBytes + (pinBankOffset * pinDataSize)
+	return int64(pinAddressOffset), nil
 }
 
 /*

@@ -46,6 +46,8 @@ maxGPIOPins provides an upper bound for the pin number when calculating what ban
 
 Typical use of the Pi5 only involves bank 0, which supports GPIO Pins 1-27, so the other offsets can be commented out.
 If we ever wanted to support more than the 27 GPIO Pins on the standard pi5 board, these would be relevant:
+	const bank1Offset = 0x4000
+	const bank2Offset = 0x8000d
 	var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
 	var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
 
@@ -53,13 +55,8 @@ Since all of our pins are stored in bank0, we only retrieve pin data from bank0.
 */
 
 const bank0Offset = 0x0000
-const bank1Offset = 0x4000
-const bank2Offset = 0x8000
 const pinDataSize = 0x8 // 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
 const maxGPIOPins = 27  // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
-
-var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
-var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
 
 // Cleans file path before opening files in device tree
 func cleanFilePath(childNodePath string) string {
