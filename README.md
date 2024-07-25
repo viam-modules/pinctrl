@@ -20,7 +20,7 @@ Currently, the raspberry pi 5 is supported.
   }
   ```
 
-Note that this module is experimential.
+Note that this module is experimental.
 
 
 
