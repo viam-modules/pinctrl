@@ -1,4 +1,5 @@
-// go build linux
+//go:build linux
+
 package pi5
 
 // Thanks to "Dan Makes Things" at https://www.makerforge.tech/posts/viam-custom-board-pi5/ for
