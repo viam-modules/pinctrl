@@ -1,33 +1,14 @@
 package pi5
 
 import (
-	"fmt"
-
 	"go.viam.com/rdk/components/board"
 	"go.viam.com/rdk/components/board/mcp3008helper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 )
 
-// A Config describes the configuration of a board and all of its connected parts.
 type Config struct {
-	AnalogReaders     []mcp3008helper.MCP3008AnalogConfig `json:"analogs,omitempty"`
-	DigitalInterrupts []board.DigitalInterruptConfig      `json:"digital_interrupts,omitempty"`
-}
-
-// Validate ensures all parts of the config are valid.
-func (conf *Config) Validate(path string) ([]string, error) {
-	for idx, c := range conf.AnalogReaders {
-		if err := c.Validate(fmt.Sprintf("%s.%s.%d", path, "analogs", idx)); err != nil {
-			return nil, err
-		}
-	}
-	for idx, c := range conf.DigitalInterrupts {
-		if err := c.Validate(fmt.Sprintf("%s.%s.%d", path, "digital_interrupts", idx)); err != nil {
-			return nil, err
-		}
-	}
-	return nil, nil
+	resource.TriviallyValidateConfig
 }
 
 // LinuxBoardConfig is a struct containing absolutely everything a genericlinux board might need
@@ -55,15 +36,8 @@ type ConfigConverter = func(resource.Config, logging.Logger) (*LinuxBoardConfig,
 // BeagleBone or Jetson boards.
 func ConstPinDefs(gpioMappings map[string]GPIOBoardMapping) ConfigConverter {
 	return func(conf resource.Config, logger logging.Logger) (*LinuxBoardConfig, error) {
-		newConf, err := resource.NativeConfig[*Config](conf)
-		if err != nil {
-			return nil, err
-		}
-
 		return &LinuxBoardConfig{
-			AnalogReaders:     newConf.AnalogReaders,
-			DigitalInterrupts: newConf.DigitalInterrupts,
-			GpioMappings:      gpioMappings,
+			GpioMappings: gpioMappings,
 		}, nil
 	}
 }
