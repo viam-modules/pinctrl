@@ -53,7 +53,6 @@ func writeValue(filepath string, value uint64, logger logging.Logger) error {
 
 func (pwm *pwmDevice) writeChip(filename string, value uint64) error {
 	str := fmt.Sprintf("%s/%s", pwm.chipPath, filename)
-	fmt.Printf(str)
 	return writeValue(fmt.Sprintf("%s/%s", pwm.chipPath, filename), value, pwm.logger)
 }
 
@@ -69,7 +68,6 @@ func (pwm *pwmDevice) writeLine(filename string, value uint64) error {
 func (pwm *pwmDevice) export() error {
 	if _, err := os.Lstat(pwm.linePath()); err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("// The pseudofile we're trying to export doesn't yet exist. Export it now. This is the")
 			// happy path
 			return pwm.writeChip("export", uint64(pwm.line))
 		}
@@ -135,14 +133,12 @@ func (pwm *pwmDevice) callGPIOReadall() {
 
 	_, err := exec.LookPath(command)
 	if err != nil {
-		fmt.Printf("Command %s not found in PATH\n", command)
 		return
 	}
 
 	cmd := exec.Command(command, args...)
 	output, err := cmd.Output()
 	if err != nil {
-		fmt.Println("Error executing command:", err)
 		return
 	}
 
@@ -159,7 +155,6 @@ func (pwm *pwmDevice) callGPIOReadall() {
 			if strings.Contains(line, pin) {
 				parts := strings.Split(line, "||")
 				if len(parts) > 1 {
-					fmt.Println(parts[0])
 				}
 			}
 		}
@@ -173,8 +168,6 @@ func (pwm *pwmDevice) callGPIOReadall() {
 func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 	pwm.mu.Lock()
 	defer pwm.mu.Unlock()
-
-	fmt.Printf("\nInitial State: \n")
 
 	// -> set mode here
 
@@ -191,7 +184,6 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 		return err
 	}
 
-	fmt.Printf("\nAfter Rexport Call: \n")
 	pwm.callGPIOReadall()
 
 	// Intuitively, we should disable the pin, set the new parameters, and then enable it again.
@@ -214,8 +206,6 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 			return err
 		}
 	}
-
-	fmt.Printf("\nAfter Enable PWM Signal Call: \n")
 	pwm.callGPIOReadall()
 
 	// Sysfs has a pseudofile named duty_cycle which contains the number of nanoseconds that the
@@ -238,7 +228,6 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 	// period, unless the period in zero. In that case, just ignore the error.
 	goutils.UncheckedError(pwm.writeLine("duty_cycle", 0))
 
-	fmt.Printf("\nSet Duty Cycle to 0\n")
 	pwm.callGPIOReadall()
 
 	// Now that the active duration is 0, setting the period to any number should work.
@@ -246,7 +235,6 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 		return err
 	}
 
-	fmt.Printf("\nSet Safe Period\n")
 	pwm.callGPIOReadall()
 
 	// Same thing here: the active duration is 0, so any value should work for the period.
@@ -254,7 +242,6 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 		return err
 	}
 
-	fmt.Printf("\nSet Period\n")
 	pwm.callGPIOReadall()
 
 	// Now that the period is set to its intended value, there should be no trouble setting the
@@ -263,7 +250,6 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 		return err
 	}
 
-	fmt.Printf("\nSet Duty Cycle\n")
 	pwm.callGPIOReadall()
 
 	return nil
