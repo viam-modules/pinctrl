@@ -18,45 +18,24 @@ const gpioName = "gpio0"
 const gpioMemPath = "/dev/gpiomem0"
 const dtBaseNodePath = "/proc/device-tree"
 
-// rangeInfo represents the info provided in the ranges property of a device tree. It provides a mapping between addresses in the child address space to the parent address space.
+/*
+rangeInfo represents the info provided in the ranges property of a device tree.
+It provides a mapping between addresses in the child address space to the parent
+address space.
+
+For example, if a range looks like:
+< child  parent size  >
+< 0x0000 0x4000 0x00CF>
+
+Then we know that something in the child address space at address 0x0000 maps to
+parent address space address 0x4000, and the size of the address space is 0x00CF.
+For child address 0x00E1, its address in the parent's address space would be 0x40E1.
+*/
 type rangeInfo struct {
 	childAddr     uint64
 	parentAddr    uint64
 	addrSpaceSize uint64
 }
-
-/*
-GPIO Pin / Bank Information for 'Alternative Modes'.
-** Note: In Raspberry Pi documentation & code, alternative Mode information is generally denoted using the keyword FSEL (function select) **
-
-Each group of pins belongs to a bank, which has its own portion of memory in the gpio chip.
-Each bank has its own base address, which is a fixed offset from the base address of the virtual page pointing to the gpio chip data in memory:
-
-	bank0 = 0x0000
-	bank1 = 0x4000
-	bank2 = 0x8000
-
-'bankDivisions' stores the GPIO# of the first pin in each bank. Here, there are 3 banks:
-
-	Bank0: GPIO pins 1-27
-	Bank1: GPIO pins 28-33
-	Bank2: GPIO pins 34-54
-
-maxGPIOPins provides an upper bound for the pin number when calculating what bank a GPIO pin belongs to.
-
-Typical use of the Pi5 only involves bank 0, which supports GPIO Pins 1-27, so the other offsets can be commented out.
-If we ever wanted to support more than the 27 GPIO Pins on the standard pi5 board, these would be relevant:
-	const bank1Offset = 0x4000
-	const bank2Offset = 0x8000d
-	var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
-	var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
-
-Since all of our pins are stored in bank0, we only retrieve pin data from bank0.
-*/
-
-const bank0Offset = 0x0000
-const pinDataSize = 0x8 // 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
-const maxGPIOPins = 27  // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
 
 // Cleans file path before opening files in device tree
 func cleanFilePath(childNodePath string) string {
@@ -92,7 +71,7 @@ func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	switch numCells {
 	// reading in 32 bits. regardless we must convert to a 64 bit address so we add a bunch of 0s to the beginning.
 	case 1:
-		parsedValue = uint64(binary.BigEndian.Uint32((*byteContents)[:(4 * numCells)]))
+		parsedValue = uint64(binary.BigEndian.Uint32((*byteContents)[:4]))
 
 	// reading in 64 bits
 	case 2:

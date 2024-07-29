@@ -26,12 +26,45 @@ import (
 const safePeriodNs = 1e6
 
 /*
+GPIO Pin / Bank Information for 'Alternative Modes'.
+** Note: In Raspberry Pi documentation & code, alternative Mode information is generally denoted using the keyword FSEL (function select) **
+
+Each group of pins belongs to a bank, which has its own portion of memory in the gpio chip.
+Each bank has its own base address, which is a fixed offset from the base address of the virtual page pointing to the gpio chip data in memory:
+
+	bank0 = 0x0000
+	bank1 = 0x4000
+	bank2 = 0x8000
+
+'bankDivisions' stores the GPIO# of the first pin in each bank. Here, there are 3 banks:
+
+	Bank0: GPIO pins 1-27
+	Bank1: GPIO pins 28-33
+	Bank2: GPIO pins 34-54
+
+maxGPIOPins provides an upper bound for the pin number when calculating what bank a GPIO pin belongs to.
+
+Typical use of the Pi5 only involves bank 0, which supports GPIO Pins 1-27, so the other offsets can be commented out.
+If we ever wanted to support more than the 27 GPIO Pins on the standard pi5 board, these would be relevant:
+
+	const bank0Offset = 0x0000
+	const bank1Offset = 0x4000
+	const bank2Offset = 0x8000
+	var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
+	var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
+
+Since all of our pins are stored in bank0, we only retrieve pin data from bank0.
+Bank0 starts at offset 0x0000, so we don't need to add an offset either.
+*/
+const maxGPIOPins = 27 // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
+
+/*
 These modes are used during pin control. Depending on which mode we'd like a pwm pin to
 be in (either GPIO or PWM), we overwrite a pin's mode data with one of these values.
 
 Note: Based on my (Maria's) experimentation, I'm pretty sure that ALT5 is the 'default' mode that tells the processor not
 to use alternative modes at all. In the pi5 library, they denote that SYS_RIO = ALT5, and my assumption here is
-that RIO = regular input output. regardless of whether I set a pin's mode to IP or OP, it the byte is still set to ALT5.
+that RIO = regular input output. regardless of whether I set a pin's mode to IP or OP, the byte is still set to ALT5.
 GPIO usage uses different banks, addresses, registers, etc, so I'm pretty sure this is a way of telling the processor it
 shouldn't be using the alternative mode data at all.
 */
@@ -51,13 +84,13 @@ type pwmDevice struct {
 	mu     sync.Mutex
 	logger logging.Logger
 
-	// virtual page that maps to memory associated with gpiochip0. We will overwrite bytes
-	// here to change a pin's mode from GPIO mode to HWPWM mode.
-	gpioChipVPage *mmap.MMap
+	// virtual page that maps to memory associated with gpiochip0. For a given gpio pin on the gpio chip (which stores all the pins),
+	//  we will overwrite bytes here to switch between GPIO and PWM mode.
+	GPIOPinsPage *mmap.MMap
 }
 
-func newPwmDevice(chipPath string, line int, logger logging.Logger, gpioChipVPage *mmap.MMap) *pwmDevice {
-	return &pwmDevice{chipPath: chipPath, line: line, logger: logger, gpioChipVPage: gpioChipVPage}
+func newPwmDevice(chipPath string, line int, logger logging.Logger, GPIOPinsPage *mmap.MMap) *pwmDevice {
+	return &pwmDevice{chipPath: chipPath, line: line, logger: logger, GPIOPinsPage: GPIOPinsPage}
 }
 
 func writeValue(filepath string, value uint64, logger logging.Logger) error {
@@ -131,7 +164,7 @@ func (pwm *pwmDevice) unexport() error {
 		return err
 	}
 
-	// This should a be redundant call because switching to GPIO happens implicitly.
+	// This should be a redundant call because switching to GPIO happens implicitly.
 	if err := pwm.SetPinMode(GPIOMode); err != nil {
 		return err
 	}
@@ -197,42 +230,29 @@ func (pwm *pwmDevice) callGPIOReadall() {
 
 // Helper Function for SetPinMode. This method updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
 func (pwm *pwmDevice) writeToPinModeByte(GPIONumber int, newMode byte) error {
-
 	/*
-		Of the 8 bytes representing all of a given pin's data:
+		Remember that GPIO mode data is stored in a different area of memory, and this area of memory relates to
+		setting alternative modes; in this case we set ALT3 (PWM Mode). When we want to use GPIO Mode, we will set the
+		alternative mode to ALT5 (default mode), which tells the processor to go look in the GPIO data area (SYS_RIO) for instructions.
+
+		Of the 8 bytes representing all of a given pin's alternative mode data:
 			pinBytes[0:3] -> bytes are allocated for 'status' modes (still unsure of what status does).
 			pinBytes[4:7] -> bytes are allocated for alternative modes.
 
-		However, you only need 1 byte to represent all the modes because
-			1 byte = 8 bits
-			8 modes can be represented by 3 bits
-
-		In practice, only 1 of the mode bytes is changed and the rest are just 0xff's.
-		The index of that byte in the entire chunk of pin data is pinBytes[4].
+		However, you only need 1 byte to represent all 8 modes, so only the first mode byte (pinBytes[4]) is written to when changing modes.
+		The remaning 3 mode bytes are just 0xff's.
 	*/
 
-	altModeIndex := 4
-
+	// Find base address of GPIO Pin in memory:
 	pinAddress, err := getGPIOPinAddress(GPIONumber)
 	if err != nil {
 		return fmt.Errorf("error getting gpio pin address: %w", err)
 	}
 
-	// find pin data within virtual page; retrieve the 4th byte from the pin data
-	vPage := *(pwm.gpioChipVPage)
-	pinBytes := vPage[pinAddress : pinAddress+pinDataSize]
-	altModeByte := pinBytes[altModeIndex]
-
-	// We keep the left half (4 bits) of the byte preserved, only modifying the right half
-	// Preserve Left Side of Byte using this Mask
-	leftSideMask := byte(0xf0)
-
-	// Set Right Side of Byte ONLY using this Mask. Ensures left side cannot be overwritten
-	rightSideMask := byte(0x0f)
-
-	// Set new mode via write to correct while protecting previous other settings
-	newAltModeByte := (altModeByte & leftSideMask) | (newMode & rightSideMask)
-	pinBytes[altModeIndex] = newAltModeByte
+	// Get pin's memory contents from virtual page; set the 5th byte of pin to mode
+	altModeIndex := int64(4)
+	vPage := *(pwm.GPIOPinsPage)
+	vPage[pinAddress+altModeIndex] = newMode
 
 	return nil
 }
@@ -245,16 +265,14 @@ For a given pin, this method determines:
 */
 func getGPIOPinAddress(GPIONumber int) (int64, error) {
 
-	// Regarding the header: I (Maria) am unsure about what is stored here. It might just be GPIO 0.
-	// In that case, banks1 & 2 would be wrong for including the header in offset calcs.
-	bankHeaderSizeBytes := 8 // 8 bytes of either header data assosciated with a bank
+	const pinDataSizeBytes = 0x8 // 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
 
 	if !(1 <= GPIONumber && GPIONumber <= maxGPIOPins) {
 		return -1, errors.New("pin is out of bank range")
 	}
 
-	pinBankOffset := (GPIONumber - 1) // 1 is the number of starting GPIO Pin in Bank0 (GPIO #1)!
-	pinAddressOffset := bank0Offset + bankHeaderSizeBytes + (pinBankOffset * pinDataSize)
+	// Regarding when pinAddressOffset = 0: I (Maria) am unsure about what is stored here. It might just be GPIO 0 (which shouldn't exist) or some header data.
+	pinAddressOffset := (GPIONumber * pinDataSizeBytes)
 	return int64(pinAddressOffset), nil
 }
 
@@ -283,9 +301,11 @@ func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
 		err = pwm.writeToPinModeByte(18, pinMode)
 	case 3:
 		err = pwm.writeToPinModeByte(19, pinMode)
+	default:
+		return fmt.Errorf("attempting to use unknown PWM line.\n")
 	}
 
-	return nil
+	return err
 }
 
 // SetPwm configures an exported pin and enables its output signal.
@@ -301,7 +321,7 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 		err = pwm.wrapError(err)
 	}()
 
-	// Set pin mode to hardware pwm enabled before using for PWM.
+	// Set pin mode to hardware pwm enabled before using PWM.
 	if err := pwm.SetPinMode(PWMMode); err != nil {
 		return err
 	}
