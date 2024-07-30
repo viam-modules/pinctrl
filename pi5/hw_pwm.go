@@ -42,7 +42,7 @@ Each bank has its own base address, which is a fixed offset from the base addres
 	Bank1: GPIO pins 28-33
 	Bank2: GPIO pins 34-54
 
-maxGPIOPins provides an upper bound for the pin number when calculating what bank a GPIO pin belongs to.
+numGPIOPins provides an upper bound for the pin number when calculating what bank a GPIO pin belongs to.
 
 Typical use of the Pi5 only involves bank 0, which supports GPIO Pins 1-27, so the other offsets can be commented out.
 If we ever wanted to support more than the 27 GPIO Pins on the standard pi5 board, these would be relevant:
@@ -50,13 +50,13 @@ If we ever wanted to support more than the 27 GPIO Pins on the standard pi5 boar
 	const bank0Offset = 0x0000
 	const bank1Offset = 0x4000
 	const bank2Offset = 0x8000
-	var bankDivisions = []int{1, 28, 34, maxGPIOPins + 1}
+	var bankDivisions = []int{1, 28, 34, numGPIOPins + 1}
 	var bankOffsets = []int{bank0Offset, bank1Offset, bank2Offset}
 
 Since all of our pins are stored in bank0, we only retrieve pin data from bank0.
 Bank0 starts at offset 0x0000, so we don't need to add an offset either.
 */
-const maxGPIOPins = 27 // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
+const numGPIOPins = 27 // On a pi5 without peripherals, there are 27 GPIO Pins. This is the max number of GPIO Pins supported by the pi5 w peripherals is 54.
 
 /*
 These modes are used during pin control. Depending on which mode we'd like a pwm pin to
@@ -267,11 +267,10 @@ func getGPIOPinAddress(GPIONumber int) (int64, error) {
 
 	const pinDataSizeBytes = 0x8 // 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
 
-	if !(1 <= GPIONumber && GPIONumber <= maxGPIOPins) {
+	if !(1 <= GPIONumber && GPIONumber <= numGPIOPins) {
 		return -1, errors.New("pin is out of bank range")
 	}
 
-	// Regarding when pinAddressOffset = 0: I (Maria) am unsure about what is stored here. It might just be GPIO 0 (which shouldn't exist) or some header data.
 	pinAddressOffset := (GPIONumber * pinDataSizeBytes)
 	return int64(pinAddressOffset), nil
 }
