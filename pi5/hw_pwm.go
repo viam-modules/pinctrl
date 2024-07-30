@@ -109,7 +109,6 @@ func writeValue(filepath string, value uint64, logger logging.Logger) error {
 
 func (pwm *pwmDevice) writeChip(filename string, value uint64) error {
 	str := fmt.Sprintf("%s/%s", pwm.chipPath, filename)
-	fmt.Printf(str)
 	return writeValue(fmt.Sprintf("%s/%s", pwm.chipPath, filename), value, pwm.logger)
 }
 
@@ -125,7 +124,6 @@ func (pwm *pwmDevice) writeLine(filename string, value uint64) error {
 func (pwm *pwmDevice) export() error {
 	if _, err := os.Lstat(pwm.linePath()); err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("// The pseudofile we're trying to export doesn't yet exist. Export it now. This is the")
 			// happy path
 			return pwm.writeChip("export", uint64(pwm.line))
 		}
@@ -197,14 +195,12 @@ func (pwm *pwmDevice) callGPIOReadall() {
 
 	_, err := exec.LookPath(command)
 	if err != nil {
-		fmt.Printf("Command %s not found in PATH\n", command)
 		return
 	}
 
 	cmd := exec.Command(command, args...)
 	output, err := cmd.Output()
 	if err != nil {
-		fmt.Println("Error executing command:", err)
 		return
 	}
 
@@ -221,7 +217,6 @@ func (pwm *pwmDevice) callGPIOReadall() {
 			if strings.Contains(line, pin) {
 				parts := strings.Split(line, "||")
 				if len(parts) > 1 {
-					fmt.Println(parts[0])
 				}
 			}
 		}
