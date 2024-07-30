@@ -1,3 +1,4 @@
+// Package pi5 defines pi5
 package pi5
 
 import (
@@ -7,6 +8,7 @@ import (
 	"go.viam.com/rdk/resource"
 )
 
+// Config defines config.
 type Config struct {
 	resource.TriviallyValidateConfig
 }
