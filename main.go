@@ -1,17 +1,18 @@
 //go:build linux
 
+// package main
 package main
 
 import (
 	"context"
 
-	"go.viam.com/rdk/logging"
-	"go.viam.com/rdk/module"
-	"go.viam.com/utils"
-
 	pi5 "pinctrl/pi5"
 
+	"go.viam.com/utils"
+
 	"go.viam.com/rdk/components/board"
+	"go.viam.com/rdk/logging"
+	"go.viam.com/rdk/module"
 )
 
 func main() {
