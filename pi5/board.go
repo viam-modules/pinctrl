@@ -22,7 +22,7 @@ import (
 )
 
 // Model for rpi5.
-var Model = resource.NewModel("viam-labs", "pinctrl", "pi5")
+var Model = resource.NewModel("viam-labs", "pinctrl", "rpi5")
 
 func init() {
 	gpioMappings, err := GetGPIOBoardMappings(Model.Name, boardInfoMappings)
