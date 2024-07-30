@@ -21,9 +21,8 @@ import (
 	"go.viam.com/rdk/resource"
 )
 
-var (
-	Model = resource.NewModel("viam-labs", "pinctrl", "pi5")
-)
+// Model for rpi5.
+var Model = resource.NewModel("viam-labs", "pinctrl", "pi5")
 
 func init() {
 	gpioMappings, err := GetGPIOBoardMappings(Model.Name, boardInfoMappings)
@@ -36,7 +35,7 @@ func init() {
 }
 
 // RegisterBoard registers a sysfs based board of the given model.
-// using this constructor to pass in the GPIO mappings
+// using this constructor to pass in the GPIO mappings.
 func RegisterBoard(modelName string, gpioMappings map[string]GPIOBoardMapping) {
 	resource.RegisterComponent(
 		board.API,
@@ -76,7 +75,7 @@ func newBoard(
 		// store addresses + other stuff here
 		chipSize: 0x30000,
 	}
-	if err := b.Reconfigure(cancelCtx, nil, conf); err != nil {
+	if err := b.Reconfigure(ctx, nil, conf); err != nil {
 		return nil, err
 	}
 
@@ -205,36 +204,6 @@ func (b *pinctrlpi5) reconfigureGpios(newConf *LinuxBoardConfig) error {
 	return nil
 }
 
-// This helper function is used while reconfiguring digital interrupts. It finds the new config (if
-// any) for a pre-existing digital interrupt.
-func findNewDigIntConfig(
-	interrupt *digitalInterrupt, confs []board.DigitalInterruptConfig, logger logging.Logger,
-) *board.DigitalInterruptConfig {
-	for _, newConfig := range confs {
-		if newConfig.Pin == interrupt.config.Pin {
-			return &newConfig
-		}
-	}
-	if interrupt.config.Name == interrupt.config.Pin {
-		// This interrupt is named identically to its pin. It was probably created on the fly
-		// by some other component (an encoder?). Unless there's now some other config with the
-		// same name but on a different pin, keep it initialized as-is.
-		for _, intConfig := range confs {
-			if intConfig.Name == interrupt.config.Name {
-				// The name of this interrupt is defined in the new config, but on a different
-				// pin. This interrupt should be closed.
-				return nil
-			}
-		}
-		logger.Debugf(
-			"Keeping digital interrupt on pin %s even though it's not explicitly mentioned "+
-				"in the new board config",
-			interrupt.config.Pin)
-		return &interrupt.config
-	}
-	return nil
-}
-
 func (b *pinctrlpi5) createGpioPin(mapping GPIOBoardMapping) *gpioPin {
 	pin := gpioPin{
 		boardWorkers: &b.activeBackgroundWorkers,
@@ -261,14 +230,11 @@ type pinctrlpi5 struct {
 	gpios      map[string]*gpioPin
 	interrupts map[string]*digitalInterrupt
 
-	/* Custom PinCTRL Params Here: */
-	dtBaseNodePath string    // file path referring to base of device tree: /proc/device-tree
-	gpioNodePath   string    // file path referring to gpio chip's location within the device-tree. retrieved from 'aliases' node: /proc/device-tree/axi/pcie@12000/rp1/gpiochip0
-	virtAddr       *byte     // base address of mapped virtual page referencing the gpio chip data
-	physAddr       uint64    // base address of the gpio chip data in /dev/mem/
-	chipSize       uint64    // length of chip's address space in memory
-	memFile        *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
-	vPage          mmap.MMap // virtual page pointing to dev/gpiomem's physical page in memory. Need to keep track of this for cleanup
+	virtAddr *byte     // base address of mapped virtual page referencing the gpio chip data
+	physAddr uint64    // base address of the gpio chip data in /dev/mem/
+	chipSize uint64    // length of chip's address space in memory
+	memFile  *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
+	vPage    mmap.MMap // virtual page pointing to dev/gpiomem's physical page in memory. Need to keep track of this for cleanup
 
 	cancelCtx               context.Context
 	cancelFunc              func()
