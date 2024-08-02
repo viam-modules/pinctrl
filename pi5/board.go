@@ -35,7 +35,7 @@ func init() {
 }
 
 // pins are stored in dev/gpiomem in order of gpio nums, so we must convert from pin name (physical num) to GPIO number.
-var PinNameToGPIONum = map[string]int{
+var pinNameToGPIONum = map[string]int{
 	"3":  2,
 	"5":  3,
 	"7":  4,
@@ -66,12 +66,11 @@ var PinNameToGPIONum = map[string]int{
 	"40": 21,
 }
 
-
 // register values for configuring pull up/pull down in mem.
-const {
-	pullDownMode   = 0x56
-	pullUpMode     = 0x5A
-}
+const (
+	pullDownMode = 0x56
+	pullUpMode   = 0x5A
+)
 
 // RegisterBoard registers a sysfs based board of the given model.
 // using this constructor to pass in the GPIO mappings.
@@ -134,7 +133,6 @@ func (b *pinctrlpi5) Reconfigure(
 	_ resource.Dependencies,
 	conf resource.Config,
 ) error {
-
 	newConf, err := b.convertConfig(conf, b.logger)
 	if err != nil {
 		return err
@@ -155,26 +153,24 @@ func (b *pinctrlpi5) Reconfigure(
 
 func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *LinuxBoardConfig) error {
 	for _, pullConf := range newConf.Pulls {
-		up, ok := b.pulls[PinNameToGPIONum[pullConf.Pin]]
+		up, ok := b.pulls[pinNameToGPIONum[pullConf.Pin]]
 		// pin hasn't yet been configured as a pull up/down, add it to the mapping
 		if !ok {
-			b.pulls[PinNameToGPIONum[pullConf.Pin]] = pullConf.Up
-			b.setPull(PinNameToGPIONum[pullConf.Pin], pullConf.Up)
+			b.pulls[pinNameToGPIONum[pullConf.Pin]] = pullConf.Up
+			b.setPull(pinNameToGPIONum[pullConf.Pin], pullConf.Up)
 		}
 		// change the direction we are pulling the pin.
 		if up != pullConf.Up {
-			b.pulls[PinNameToGPIONum[pullConf.Pin]] = pullConf.Up
-			b.setPull(PinNameToGPIONum[pullConf.Pin], pullConf.Up)
+			b.pulls[pinNameToGPIONum[pullConf.Pin]] = pullConf.Up
+			b.setPull(pinNameToGPIONum[pullConf.Pin], pullConf.Up)
 		}
 	}
 
 	return nil
-
 }
 
-// setPull is a helper function to access memory to set a pull up/pull down resisitor on a pin
+// setPull is a helper function to access memory to set a pull up/pull down resisitor on a pin.
 func (b *pinctrlpi5) setPull(pin int, up bool) {
-
 	// offset to the pads address space in /dev/gpiomem
 	// all gpio pins are in bank0
 	PadsBank0Offset := 0x00020000
