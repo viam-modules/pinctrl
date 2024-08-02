@@ -34,7 +34,7 @@ func init() {
 	RegisterBoard(Model.Name, gpioMappings)
 }
 
-// pins are stored in dev/gpiomem in order of gpio nums, so we must convert from pin name (physical num) to GPIO number.
+// pins are stored in /dev/gpiomem in order of gpio nums, so we must convert from pin name (physical num) to GPIO number.
 var pinNameToGPIONum = map[string]int{
 	"3":  2,
 	"5":  3,
