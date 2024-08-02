@@ -2,15 +2,19 @@
 package pi5
 
 import (
-	"go.viam.com/rdk/components/board"
-	"go.viam.com/rdk/components/board/mcp3008helper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 )
 
 // Config defines config.
 type Config struct {
+	Pulls []PullConfig `json:"pull,omitempty"`
 	resource.TriviallyValidateConfig
+}
+
+type PullConfig struct {
+	Pin string `json:"pin"`
+	Up  bool   `json:"pull_up"`
 }
 
 // LinuxBoardConfig is a struct containing absolutely everything a genericlinux board might need
@@ -21,9 +25,8 @@ type Config struct {
 // go through reconfiguration, we convert the provided config into a LinuxBoardConfig, and then
 // reconfigure based on it.
 type LinuxBoardConfig struct {
-	AnalogReaders     []mcp3008helper.MCP3008AnalogConfig
-	DigitalInterrupts []board.DigitalInterruptConfig
-	GpioMappings      map[string]GPIOBoardMapping
+	Pulls        []PullConfig
+	GpioMappings map[string]GPIOBoardMapping
 }
 
 // ConfigConverter is a type synonym for a function to turn whatever config we get during
@@ -38,8 +41,14 @@ type ConfigConverter = func(resource.Config, logging.Logger) (*LinuxBoardConfig,
 // BeagleBone or Jetson boards.
 func ConstPinDefs(gpioMappings map[string]GPIOBoardMapping) ConfigConverter {
 	return func(conf resource.Config, logger logging.Logger) (*LinuxBoardConfig, error) {
+		newConf, err := resource.NativeConfig[*Config](conf)
+		if err != nil {
+			return nil, err
+		}
+
 		return &LinuxBoardConfig{
 			GpioMappings: gpioMappings,
+			Pulls:        newConf.Pulls,
 		}, nil
 	}
 }

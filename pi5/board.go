@@ -34,6 +34,45 @@ func init() {
 	RegisterBoard(Model.Name, gpioMappings)
 }
 
+// pins are stored in dev/gpiomem in order of gpio nums, so we must convert from pin name (physical num) to GPIO number.
+var PinNameToGPIONum = map[string]int{
+	"3":  2,
+	"5":  3,
+	"7":  4,
+	"8":  14,
+	"10": 15,
+	"11": 17,
+	"12": 18,
+	"13": 27,
+	"15": 22,
+	"16": 23,
+	"18": 24,
+	"19": 10,
+	"21": 9,
+	"22": 25,
+	"23": 11,
+	"24": 8,
+	"26": 7,
+	"27": 0,
+	"28": 1,
+	"29": 5,
+	"31": 6,
+	"32": 12,
+	"33": 13,
+	"35": 19,
+	"36": 16,
+	"37": 26,
+	"38": 20,
+	"40": 21,
+}
+
+
+// register values for configuring pull up/pull down in mem.
+const {
+	pullDownMode   = 0x56
+	pullUpMode     = 0x5A
+}
+
 // RegisterBoard registers a sysfs based board of the given model.
 // using this constructor to pass in the GPIO mappings.
 func RegisterBoard(modelName string, gpioMappings map[string]GPIOBoardMapping) {
@@ -72,16 +111,20 @@ func newBoard(
 		gpios:      map[string]*gpioPin{},
 		interrupts: map[string]*digitalInterrupt{},
 
-		// store addresses + other stuff here
 		chipSize: 0x30000,
+		pulls:    map[int]bool{},
 	}
+
+	// Note that this must be called before reconfigure
+	// the pull up/down configuration uses the memory mapped in this function.
+	if err := b.setupPinControl(); err != nil {
+		return nil, err
+	}
+
 	if err := b.Reconfigure(ctx, nil, conf); err != nil {
 		return nil, err
 	}
 
-	if err := b.setupPinControl(); err != nil {
-		return nil, err
-	}
 	return b, nil
 }
 
@@ -91,6 +134,7 @@ func (b *pinctrlpi5) Reconfigure(
 	_ resource.Dependencies,
 	conf resource.Config,
 ) error {
+
 	newConf, err := b.convertConfig(conf, b.logger)
 	if err != nil {
 		return err
@@ -102,7 +146,47 @@ func (b *pinctrlpi5) Reconfigure(
 	if err := b.reconfigureGpios(newConf); err != nil {
 		return err
 	}
+
+	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *LinuxBoardConfig) error {
+	for _, pullConf := range newConf.Pulls {
+		up, ok := b.pulls[PinNameToGPIONum[pullConf.Pin]]
+		// pin hasn;t yet been configured as a pullup/pull down, add it to the mapping
+		if !ok {
+			b.pulls[PinNameToGPIONum[pullConf.Pin]] = pullConf.Up
+			b.setPull(PinNameToGPIONum[pullConf.Pin], pullConf.Up)
+		}
+		// change the direction we are pulling the pin.
+		if up != pullConf.Up {
+			b.pulls[PinNameToGPIONum[pullConf.Pin]] = pullConf.Up
+			b.setPull(PinNameToGPIONum[pullConf.Pin], pullConf.Up)
+		}
+	}
+
+	return nil
+
+}
+
+// setPull is a helper function to access memory to set a pull up/pull down resisitor on a pin
+func (b *pinctrlpi5) setPull(pin int, up bool) {
+
+	// offset to the pads address space in /dev/gpiomem
+	// all gpio pins are in bank0
+	PadsBank0Offset := 0x00020000
+
+	// each pad has 4 header bytes + 4 bytes of memory for each gpio pin
+	pinOffsetBytes := 4 + 4*pin
+
+	if up {
+		b.vPage[PadsBank0Offset+pinOffsetBytes] = pullUpMode
+	} else {
+		b.vPage[PadsBank0Offset+pinOffsetBytes] = pullDownMode
+	}
 }
 
 // This is a helper function used to reconfigure the GPIO pins. It looks for the key in the map
@@ -218,7 +302,6 @@ func (b *pinctrlpi5) createGpioPin(mapping GPIOBoardMapping) *gpioPin {
 	return &pin
 }
 
-// Board implements a component for a Linux machine.
 type pinctrlpi5 struct {
 	resource.Named
 	mu            sync.RWMutex
@@ -239,6 +322,8 @@ type pinctrlpi5 struct {
 	cancelCtx               context.Context
 	cancelFunc              func()
 	activeBackgroundWorkers sync.WaitGroup
+
+	pulls map[int]bool // mapping of gpio pin to pull up/down
 }
 
 // AnalogByName returns the analog pin by the given name if it exists.
