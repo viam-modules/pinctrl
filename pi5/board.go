@@ -156,7 +156,7 @@ func (b *pinctrlpi5) Reconfigure(
 func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *LinuxBoardConfig) error {
 	for _, pullConf := range newConf.Pulls {
 		up, ok := b.pulls[PinNameToGPIONum[pullConf.Pin]]
-		// pin hasn;t yet been configured as a pullup/pull down, add it to the mapping
+		// pin hasn't yet been configured as a pull up/down, add it to the mapping
 		if !ok {
 			b.pulls[PinNameToGPIONum[pullConf.Pin]] = pullConf.Up
 			b.setPull(PinNameToGPIONum[pullConf.Pin], pullConf.Up)
