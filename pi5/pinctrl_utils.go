@@ -71,7 +71,7 @@ func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	var parsedValue uint64
 
 	if numCells < 1 {
-		return 0, fmt.Errorf("attempting to read <1 cells: num was %d\n", numCells)
+		return 0, fmt.Errorf("attempting to read <1 cells: num was %d", numCells)
 	}
 
 	if len(*byteContents) < int(numCells)*4 {
