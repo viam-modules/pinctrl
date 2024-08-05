@@ -68,8 +68,8 @@ var pinNameToGPIONum = map[string]int{
 
 // register values for configuring pull up/pull down in mem.
 const (
-	pullDownMode = 0x56
-	pullUpMode   = 0x5A
+	pullDownMode = 0x4
+	pullUpMode   = 0x8
 )
 
 // RegisterBoard registers a sysfs based board of the given model.
@@ -178,11 +178,16 @@ func (b *pinctrlpi5) setPull(pin int, up bool) {
 	// each pad has 4 header bytes + 4 bytes of memory for each gpio pin
 	pinOffsetBytes := 4 + 4*pin
 
+	var mode byte
 	if up {
-		b.vPage[PadsBank0Offset+pinOffsetBytes] = pullUpMode
+		mode = pullUpMode
 	} else {
-		b.vPage[PadsBank0Offset+pinOffsetBytes] = pullDownMode
+		mode = pullDownMode
 	}
+
+	// only the 5th and 6th bits of the register are used to set pull up/down
+	// reset the register then set the mode
+	b.vPage[PadsBank0Offset+pinOffsetBytes] = (b.vPage[PadsBank0Offset+pinOffsetBytes] & 0xf3) | mode
 }
 
 // This is a helper function used to reconfigure the GPIO pins. It looks for the key in the map
