@@ -27,7 +27,7 @@ var Model = resource.NewModel("viam-labs", "pinctrl", "rpi5")
 
 func init() {
 	gpioMappings, err := gl.GetGPIOBoardMappings(Model.Name, boardInfoMappings)
-	var noBoardErr NoBoardFoundError
+	var noBoardErr gl.NoBoardFoundError
 	if errors.As(err, &noBoardErr) {
 		logging.Global().Debugw("Error getting raspi5 GPIO board mapping", "error", err)
 	}
