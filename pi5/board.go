@@ -47,13 +47,13 @@ func RegisterBoard(modelName string, gpioMappings map[string]GPIOBoardMapping) {
 				conf resource.Config,
 				logger logging.Logger,
 			) (board.Board, error) {
-				return NewBoard(ctx, conf, ConstPinDefs(gpioMappings), logger, false)
+				return newBoard(ctx, conf, ConstPinDefs(gpioMappings), logger, false)
 			},
 		})
 }
 
-// NewBoard is the constructor for a Board.
-func NewBoard(
+// newBoard is the constructor for a Board.
+func newBoard(
 	ctx context.Context,
 	conf resource.Config,
 	convertConfig ConfigConverter,
@@ -73,7 +73,7 @@ func NewBoard(
 		gpios:      map[string]*gpioPin{},
 		interrupts: map[string]*digitalInterrupt{},
 
-		// store addresses + other stuff here\
+		// store addresses + other stuff here
 		chipSize: 0x30000,
 	}
 	if err := b.Reconfigure(ctx, nil, conf); err != nil {

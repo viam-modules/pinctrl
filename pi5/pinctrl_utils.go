@@ -17,10 +17,11 @@ import (
 const (
 	gpioName    = "gpio0"
 	gpioMemPath = "/dev/gpiomem0"
+	testFolder  = "./mock-device-tree"
+	dtBase      = "/proc/device-tree"
 )
 
-var dtTestBaseFolder = "./test-device-tree"
-var dtBaseNodePath = "/proc/device-tree"
+var dtBaseNodePath string
 
 /*
 rangeInfo represents the info provided in the ranges property of a device tree.
@@ -44,7 +45,7 @@ type rangeInfo struct {
 // Cleans file path before opening files in device tree.
 func cleanFilePath(nodePath string) string {
 	nodePath = strings.TrimSpace(nodePath)
-	re := regexp.MustCompile(`[\x00-\x1F]`) // gets rid of Null Characters in File Path
+	re := regexp.MustCompile(`[\x00-\x1F]`) // gets rid of Null Chars & Non Printable Chars in File Path
 	nodePath = re.ReplaceAllString(nodePath, "")
 	nodePath = filepath.Clean(nodePath)
 	return nodePath
@@ -53,7 +54,7 @@ func cleanFilePath(nodePath string) string {
 // We look in the 'aliases' node at the base of proc/device-tree to determine the full file path required to access our GPIO Chip.
 func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
 	dtNodePath := dtBaseNodePath + "/aliases/" + nodeName
-
+	//nolint:gosec
 	nodePathBytes, err := os.ReadFile(dtNodePath)
 	if err != nil {
 		return "", fmt.Errorf("Error reading directory: %w", err)
@@ -176,7 +177,7 @@ func getRangesAddr(childNodePath string, numCAddrCells, numPAddrCells, numAddrSp
 		}
 
 		rangeInfo := rangeInfo{childAddr: childAddr, parentAddr: parentAddr, addrSpaceSize: addrSpaceSize}
-		//fmt.Printf("Ranges Info: %d, %d, %d\n", childAddr, parentAddr, addrSpaceSize)
+
 		addrRanges = append(addrRanges, rangeInfo)
 	}
 
@@ -249,8 +250,6 @@ func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 		return fmt.Errorf("trouble calculating phys addr for %s: %w", nodePath, err)
 	}
 
-	//fmt.Printf("phys addr 0x%x", b.physAddr)
-
 	return nil
 }
 
@@ -313,9 +312,11 @@ func (b *pinctrlpi5) setupPinControl(testFlag bool) error {
 	// This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
 
 	// If we are running tests, we need to read files/folders from our module's local sample device tree.
-	// This is located at raspi5-pinctrl/pi5/test-device-tree
+	// This is located at raspi5-pinctrl/pi5/mock-device-tree
 	if testFlag {
-		dtBaseNodePath = dtTestBaseFolder + dtBaseNodePath
+		dtBaseNodePath = testFolder + dtBase
+	} else {
+		dtBaseNodePath = dtBase
 	}
 
 	nodePath, err := b.findPathFromAlias(gpioName)
@@ -334,7 +335,7 @@ func (b *pinctrlpi5) setupPinControl(testFlag bool) error {
 	// to run tests with. We exit since we cannot actually access memory,
 	// which means we can't create a virtual page either.
 	if testFlag {
-		return err
+		return nil
 	}
 
 	err = b.createGPIOVPage(gpioMemPath)
@@ -347,7 +348,6 @@ func (b *pinctrlpi5) setupPinControl(testFlag bool) error {
 
 // Cleans up mapped memory / files related to pin control upon board close() call.
 func (b *pinctrlpi5) cleanupPinControl() error {
-
 	if err := b.vPage.Unmap(); err != nil {
 		return fmt.Errorf("Error during unmap: %w", err)
 	}
