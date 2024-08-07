@@ -94,7 +94,7 @@ func RegisterBoard(modelName string, gpioMappings map[string]gl.GPIOBoardMapping
 
 // newBoard is the constructor for a Board.
 func newBoard(
-	ctx context.Context,
+	_ context.Context,
 	conf resource.Config,
 	gpioMappings map[string]gl.GPIOBoardMapping,
 	logger logging.Logger,
@@ -103,7 +103,7 @@ func newBoard(
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
 	b := &pinctrlpi5{
-		Named:         conf.ResourceName().AsNamed(),
+		Named: conf.ResourceName().AsNamed(),
 
 		gpioMappings: gpioMappings,
 		logger:       logger,
@@ -192,7 +192,7 @@ func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
 type pinctrlpi5 struct {
 	resource.Named
 	resource.TriviallyReconfigurable
-	mu            sync.RWMutex
+	mu sync.RWMutex
 
 	gpioMappings map[string]gl.GPIOBoardMapping
 	logger       logging.Logger
