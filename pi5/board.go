@@ -105,9 +105,10 @@ func newBoard(
 	b := &pinctrlpi5{
 		Named:         conf.ResourceName().AsNamed(),
 
-		logger:     logger,
-		cancelCtx:  cancelCtx,
-		cancelFunc: cancelFunc,
+		gpioMappings: gpioMappings,
+		logger:       logger,
+		cancelCtx:    cancelCtx,
+		cancelFunc:   cancelFunc,
 
 		gpios:      map[string]*gpioPin{},
 		interrupts: map[string]*digitalInterrupt{},
@@ -126,7 +127,6 @@ func newBoard(
 	for newName, mapping := range gpioMappings {
 		b.gpios[newName] = b.createGpioPin(mapping)
 	}
-	b.gpioMappings = gpioMappings
 
 	newConf, err := b.convertConfig(conf, b.logger)
 	if err != nil {
