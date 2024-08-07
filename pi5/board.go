@@ -171,7 +171,7 @@ func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *LinuxBoardConfig) error
 
 // setPull is a helper function to access memory to set a pull up/pull down resisitor on a pin.
 func (b *pinctrlpi5) setPull(pin int, up bool) {
-	// offset to the pads address space in /dev/gpiomem
+	// offset to the pads address space in /dev/gpiomem0
 	// all gpio pins are in bank0
 	PadsBank0Offset := 0x00020000
 
