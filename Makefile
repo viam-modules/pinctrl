@@ -1,4 +1,8 @@
 TOOL_BIN = bin/gotools/$(shell uname -s)-$(shell uname -m)
+EXECUTABLE_BIN = bin/$(shell uname -s)-$(shell uname -m)
+
+build:
+	go build -o "$(EXECUTABLE_BIN)/"
 
 tool-install:
 	GOBIN=`pwd`/$(TOOL_BIN) go install \
