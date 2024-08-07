@@ -47,9 +47,9 @@ func TestNewBoard(t *testing.T) {
 
 	// Test Creations of Boards
 	newB, err := newBoard(ctx, config, ConstPinDefs(testBoardMappings), logger, true)
-	defer newB.Close(ctx)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, newB, test.ShouldNotBeNil)
+	defer newB.Close(ctx)
 
 	// Cast from board.Board to pinctrlpi5 is required to access board's vars
 	p5 := newB.(*pinctrlpi5)
@@ -57,8 +57,8 @@ func TestNewBoard(t *testing.T) {
 	test.That(t, p5.physAddr, test.ShouldEqual, 0x1f000d0000)
 }
 
+// Test pinctrl_utils.go helper functions:
 func TestFindPathFromAlias(t *testing.T) {
-
 	logger := logging.NewTestLogger(t)
 	ctx := context.Background()
 
@@ -80,16 +80,13 @@ func TestFindPathFromAlias(t *testing.T) {
 		ConvertedAttributes: conf,
 	}
 	newB, err := newBoard(ctx, config, ConstPinDefs(testBoardMappings), logger, true)
-	defer newB.Close(ctx)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, newB, test.ShouldNotBeNil)
+	defer newB.Close(ctx)
 
 	// Cast from board.Board to pinctrlpi5 is required to access board's vars
 	p5 := newB.(*pinctrlpi5)
-	//test.That(t, p5.chipSize, test.ShouldEqual, 0x30000)
-	//test.That(t, p5.physAddr, test.ShouldEqual, 0x1f000d0000)
 
-	// Test pinctrl_utils.go helper functions:
 	path := "/axi/pcie@120000/rp1/gpio@d0000"
 	alias, err := p5.findPathFromAlias("gpio0")
 	test.That(t, err, test.ShouldBeNil)
@@ -149,6 +146,7 @@ func TestGetRegAddr(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, reg, test.ShouldEqual, 0xC0400D0000)
 }
+
 func TestGetRangesAddr(t *testing.T) {
 	path := "./mock-device-tree/proc/device-tree/axi/pcie@120000/rp1"
 	ranges, err := getRangesAddr(path, 3, 2, 2)
@@ -169,7 +167,6 @@ func TestGetRangesAddr(t *testing.T) {
 }
 
 func TestDeviceTreeParsing(t *testing.T) {
-
 	t.Run("test board setup", func(t *testing.T) {
 		TestEmptyBoard(t)
 		TestNewBoard(t)
@@ -181,5 +178,4 @@ func TestDeviceTreeParsing(t *testing.T) {
 		TestGetRegAddr(t)
 		TestGetRangesAddr(t)
 	})
-
 }

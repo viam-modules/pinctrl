@@ -58,7 +58,7 @@ func newBoard(
 	conf resource.Config,
 	convertConfig ConfigConverter,
 	logger logging.Logger,
-	testFlag bool,
+	testingMode bool,
 ) (board.Board, error) {
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
@@ -80,7 +80,7 @@ func newBoard(
 		return nil, err
 	}
 
-	if err := b.setupPinControl(testFlag); err != nil {
+	if err := b.setupPinControl(testingMode); err != nil {
 		return nil, err
 	}
 	return b, nil

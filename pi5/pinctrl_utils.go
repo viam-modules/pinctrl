@@ -189,10 +189,10 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 	invalidAddr := uint64(math.NaN())
 
 	// Base Case: We are at the root of the device tree.
-	if currNodePath == dtBaseNodePath {
-		return physAddress, nil
-	} else if "./"+currNodePath == dtBaseNodePath {
-		// This accounts for the test case scenario, that uses the local device tree within the pi5 folder
+	// ReplaceAll() accounts for the test case scenario, that uses the local device tree within the pi5 folder.
+	// Having the "./" at the beginning of our file path messes with our path comparisons in the recursive calls, so we
+	// remove it if its there just for the base node comparison step.
+	if currNodePath == strings.ReplaceAll(dtBaseNodePath, "./", "") {
 		return physAddress, nil
 	}
 
@@ -307,13 +307,13 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 }
 
 // Sets up GPIO pin memory access by parsing the device tree for relevant address information.
-func (b *pinctrlpi5) setupPinControl(testFlag bool) error {
+func (b *pinctrlpi5) setupPinControl(testingMode bool) error {
 	// TODO: "gpio0" is hardcoded as the gpioName.
 	// This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
 
 	// If we are running tests, we need to read files/folders from our module's local sample device tree.
 	// This is located at raspi5-pinctrl/pi5/mock-device-tree
-	if testFlag {
+	if testingMode {
 		dtBaseNodePath = testFolder + dtBase
 	} else {
 		dtBaseNodePath = dtBase
@@ -334,7 +334,7 @@ func (b *pinctrlpi5) setupPinControl(testFlag bool) error {
 	// In our current pinctrl_test.go we do not have any fake or real board
 	// to run tests with. We exit since we cannot actually access memory,
 	// which means we can't create a virtual page either.
-	if testFlag {
+	if testingMode {
 		return nil
 	}
 
