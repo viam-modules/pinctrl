@@ -6,8 +6,9 @@ package main
 import (
 	"context"
 
-	"go.viam.com/utils"
 	"pinctrl/pi5"
+
+	"go.viam.com/utils"
 
 	"go.viam.com/rdk/components/board"
 	"go.viam.com/rdk/logging"

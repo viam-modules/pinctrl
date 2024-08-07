@@ -48,17 +48,18 @@ func RegisterBoard(modelName string, gpioMappings map[string]gl.GPIOBoardMapping
 				conf resource.Config,
 				logger logging.Logger,
 			) (board.Board, error) {
-				return newBoard(ctx, conf, ConstPinDefs(gpioMappings), logger)
+				return newBoard(ctx, conf, ConstPinDefs(gpioMappings), logger, false)
 			},
 		})
 }
 
-// NewBoard is the constructor for a Board.
+// newBoard is the constructor for a Board.
 func newBoard(
 	ctx context.Context,
 	conf resource.Config,
 	convertConfig ConfigConverter,
 	logger logging.Logger,
+	testingMode bool,
 ) (board.Board, error) {
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
@@ -80,7 +81,7 @@ func newBoard(
 		return nil, err
 	}
 
-	if err := b.setupPinControl(); err != nil {
+	if err := b.setupPinControl(testingMode); err != nil {
 		return nil, err
 	}
 	return b, nil
@@ -363,7 +364,6 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 // Close attempts to cleanly close each part of the board.
 func (b *pinctrlpi5) Close(ctx context.Context) error {
 	b.mu.Lock()
-
 	err := b.cleanupPinControl()
 	if err != nil {
 		return fmt.Errorf("trouble cleaning up pincontrol memory: %w", err)
