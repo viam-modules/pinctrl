@@ -28,17 +28,8 @@ func TestNewBoard(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a fake board mapping with two pins for testing.
-	// These are needed for making board; not used for pin control testing yet.
-	testBoardMappings := make(map[string]GPIOBoardMapping, 2)
-	testBoardMappings["1"] = GPIOBoardMapping{
-		GPIOChipDev:    "gpiochip0",
-		GPIO:           12,
-		GPIOName:       "12",
-		PWMSysFsDir:    "",
-		PWMID:          1,
-		HWPWMSupported: true,
-	}
-
+	// BoardMappings are needed as a parameter passed in to NewBoard but are not used for pin control testing yet.
+	testBoardMappings := make(map[string]GPIOBoardMapping, 0)
 	conf := &Config{}
 	config := resource.Config{
 		Name:                "board1",
@@ -62,17 +53,9 @@ func TestFindPathFromAlias(t *testing.T) {
 	logger := logging.NewTestLogger(t)
 	ctx := context.Background()
 
-	// Create a fake board mapping with two pins for testing.
-	// These are needed for making board; not used for pin control testing yet.
-	testBoardMappings := make(map[string]GPIOBoardMapping, 2)
-	testBoardMappings["1"] = GPIOBoardMapping{
-		GPIOChipDev:    "gpiochip0",
-		GPIO:           12,
-		GPIOName:       "12",
-		PWMSysFsDir:    "",
-		PWMID:          1,
-		HWPWMSupported: true,
-	}
+	// Create a fake empty board mapping.
+	// These are needed for making board; not actually used for pin control testing yet.
+	testBoardMappings := make(map[string]GPIOBoardMapping, 0)
 
 	conf := &Config{}
 	config := resource.Config{
