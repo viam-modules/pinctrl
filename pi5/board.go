@@ -123,37 +123,17 @@ func newBoard(
 	}
 
 	if err := b.initializeGPIOs(gpioMappings); err != nil {
-		return err
+		return nil, err
 	}
 
-	if err := b.setupPinControl(testingMode); err != nil {
+	newConf, err := b.convertConfig(conf, b.logger)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
 		return nil, err
 	}
 	return b, nil
-}
-
-// Reconfigure reconfigures the board.
-func (b *pinctrlpi5) Reconfigure(
-	ctx context.Context,
-	_ resource.Dependencies,
-	conf resource.Config,
-) error {
-	newConf, err := b.convertConfig(conf, b.logger)
-	if err != nil {
-		return err
-	}
-
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if err := b.initializeGPIOs(newConf); err != nil {
-		return err
-	}
-
-	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *LinuxBoardConfig) error {
@@ -196,7 +176,7 @@ func (b *pinctrlpi5) initializeGPIOs(gpioMappings map[string]gl.GPIOBoardMapping
 	for newName, mapping := range gpioMappings {
 		b.gpios[newName] = b.createGpioPin(mapping)
 	}
-	b.gpioMappings = newConf.GpioMappings
+	b.gpioMappings = gpioMappings
 
 	return nil
 }
@@ -217,8 +197,8 @@ func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
 
 type pinctrlpi5 struct {
 	resource.Named
+	resource.TriviallyReconfigurable
 	mu            sync.RWMutex
-	convertConfig ConfigConverter
 
 	gpioMappings map[string]gl.GPIOBoardMapping
 	logger       logging.Logger
