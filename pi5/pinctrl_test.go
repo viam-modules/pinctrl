@@ -8,6 +8,7 @@ import (
 
 	"go.viam.com/test"
 
+	"go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 )
@@ -29,7 +30,7 @@ func TestNewBoard(t *testing.T) {
 
 	// Create a fake board mapping with two pins for testing.
 	// BoardMappings are needed as a parameter passed in to NewBoard but are not used for pin control testing yet.
-	testBoardMappings := make(map[string]GPIOBoardMapping, 0)
+	testBoardMappings := make(map[string]genericlinux.GPIOBoardMapping, 0)
 	conf := &Config{}
 	config := resource.Config{
 		Name:                "board1",
@@ -55,7 +56,7 @@ func TestFindPathFromAlias(t *testing.T) {
 
 	// Create a fake empty board mapping.
 	// These are needed for making board; not actually used for pin control testing yet.
-	testBoardMappings := make(map[string]GPIOBoardMapping, 0)
+	testBoardMappings := make(map[string]genericlinux.GPIOBoardMapping, 0)
 
 	conf := &Config{}
 	config := resource.Config{
