@@ -13,6 +13,7 @@ import (
 	"go.viam.com/utils"
 
 	"go.viam.com/rdk/components/board"
+	"go.viam.com/rdk/components/board/genericlinux"
 	rdkutils "go.viam.com/rdk/utils"
 )
 
@@ -30,7 +31,7 @@ type digitalInterrupt struct {
 // from the old one.
 func newDigitalInterrupt(
 	config board.DigitalInterruptConfig,
-	pinMapping GPIOBoardMapping,
+	pinMapping genericlinux.GPIOBoardMapping,
 	oldInterrupt *digitalInterrupt,
 ) (*digitalInterrupt, error) {
 	chip, err := gpio.OpenChip(pinMapping.GPIOChipDev)

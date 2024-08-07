@@ -3,6 +3,7 @@ package pi5
 
 import (
 	"go.viam.com/rdk/components/board"
+	"go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/components/board/mcp3008helper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
@@ -23,7 +24,7 @@ type Config struct {
 type LinuxBoardConfig struct {
 	AnalogReaders     []mcp3008helper.MCP3008AnalogConfig
 	DigitalInterrupts []board.DigitalInterruptConfig
-	GpioMappings      map[string]GPIOBoardMapping
+	GpioMappings      map[string]genericlinux.GPIOBoardMapping
 }
 
 // ConfigConverter is a type synonym for a function to turn whatever config we get during
@@ -36,7 +37,7 @@ type ConfigConverter = func(resource.Config, logging.Logger) (*LinuxBoardConfig,
 // ConfigConverter that will use these pin definitions in the underlying config. It is intended to
 // be used for board components whose pin definitions are built into the RDK, such as the
 // BeagleBone or Jetson boards.
-func ConstPinDefs(gpioMappings map[string]GPIOBoardMapping) ConfigConverter {
+func ConstPinDefs(gpioMappings map[string]genericlinux.GPIOBoardMapping) ConfigConverter {
 	return func(conf resource.Config, logger logging.Logger) (*LinuxBoardConfig, error) {
 		return &LinuxBoardConfig{
 			GpioMappings: gpioMappings,
