@@ -57,7 +57,7 @@ func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
 	//nolint:gosec
 	nodePathBytes, err := os.ReadFile(dtNodePath)
 	if err != nil {
-		return "", fmt.Errorf("Error reading directory: %w", err)
+		return "", fmt.Errorf("error reading directory: %w", err)
 	}
 
 	// convert readFile output from bytes -> string format
@@ -349,11 +349,11 @@ func (b *pinctrlpi5) setupPinControl(testingMode bool) error {
 // Cleans up mapped memory / files related to pin control upon board close() call.
 func (b *pinctrlpi5) cleanupPinControl() error {
 	if err := b.vPage.Unmap(); err != nil {
-		return fmt.Errorf("Error during unmap: %w", err)
+		return fmt.Errorf("error during unmap: %w", err)
 	}
 
 	if err := b.memFile.Close(); err != nil {
-		return fmt.Errorf("Error during memFile closing: %w", err)
+		return fmt.Errorf("error during memFile closing: %w", err)
 	}
 
 	return nil
