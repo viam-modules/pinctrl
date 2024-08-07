@@ -122,9 +122,11 @@ func newBoard(
 		return nil, err
 	}
 
-	if err := b.initializeGPIOs(gpioMappings); err != nil {
-		return nil, err
+	// Initialize the GPIO pins
+	for newName, mapping := range gpioMappings {
+		b.gpios[newName] = b.createGpioPin(mapping)
 	}
+	b.gpioMappings = gpioMappings
 
 	newConf, err := b.convertConfig(conf, b.logger)
 	if err != nil {
@@ -133,6 +135,7 @@ func newBoard(
 	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
 		return nil, err
 	}
+
 	return b, nil
 }
 
@@ -170,15 +173,6 @@ func (b *pinctrlpi5) setPulls() {
 		// reset the register then set the mode
 		b.vPage[PadsBank0Offset+pinOffsetBytes] = (b.vPage[PadsBank0Offset+pinOffsetBytes] & 0xf3) | mode
 	}
-}
-
-func (b *pinctrlpi5) initializeGPIOs(gpioMappings map[string]gl.GPIOBoardMapping) error {
-	for newName, mapping := range gpioMappings {
-		b.gpios[newName] = b.createGpioPin(mapping)
-	}
-	b.gpioMappings = gpioMappings
-
-	return nil
 }
 
 func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
