@@ -68,6 +68,7 @@ var pinNameToGPIONum = map[string]int{
 
 // register values for configuring pull up/pull down in mem.
 const (
+	pullNoneMode = 0x0
 	pullDownMode = 0x4
 	pullUpMode   = 0x8
 )
@@ -111,7 +112,7 @@ func newBoard(
 		interrupts: map[string]*digitalInterrupt{},
 
 		chipSize: 0x30000,
-		pulls:    map[int]bool{},
+		pulls:    map[int]byte{},
 	}
 
 	// Note that this must be called before reconfigure
@@ -153,41 +154,38 @@ func (b *pinctrlpi5) Reconfigure(
 
 func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *LinuxBoardConfig) error {
 	for _, pullConf := range newConf.Pulls {
-		up, ok := b.pulls[pinNameToGPIONum[pullConf.Pin]]
-		// pin hasn't yet been configured as a pull up/down, add it to the mapping
-		if !ok {
-			b.pulls[pinNameToGPIONum[pullConf.Pin]] = pullConf.Up
-			b.setPull(pinNameToGPIONum[pullConf.Pin], pullConf.Up)
+		gpioNum := pinNameToGPIONum[pullConf.Pin]
+		switch pullConf.Pull {
+		case "none":
+			b.pulls[gpioNum] = pullNoneMode
+		case "up":
+			b.pulls[gpioNum] = pullUpMode
+		case "down":
+			b.pulls[gpioNum] = pullDownMode
+		default:
+			return fmt.Errorf("unexpected pull")
 		}
-		// change the direction we are pulling the pin.
-		if up != pullConf.Up {
-			b.pulls[pinNameToGPIONum[pullConf.Pin]] = pullConf.Up
-			b.setPull(pinNameToGPIONum[pullConf.Pin], pullConf.Up)
-		}
+
+		b.setPulls()
 	}
 
 	return nil
 }
 
 // setPull is a helper function to access memory to set a pull up/pull down resisitor on a pin.
-func (b *pinctrlpi5) setPull(pin int, up bool) {
+func (b *pinctrlpi5) setPulls() {
 	// offset to the pads address space in /dev/gpiomem0
 	// all gpio pins are in bank0
 	PadsBank0Offset := 0x00020000
 
-	// each pad has 4 header bytes + 4 bytes of memory for each gpio pin
-	pinOffsetBytes := 4 + 4*pin
+	for pin, mode := range b.pulls {
+		// each pad has 4 header bytes + 4 bytes of memory for each gpio pin
+		pinOffsetBytes := 4 + 4*pin
 
-	var mode byte
-	if up {
-		mode = pullUpMode
-	} else {
-		mode = pullDownMode
+		// only the 5th and 6th bits of the register are used to set pull up/down
+		// reset the register then set the mode
+		b.vPage[PadsBank0Offset+pinOffsetBytes] = (b.vPage[PadsBank0Offset+pinOffsetBytes] & 0xf3) | mode
 	}
-
-	// only the 5th and 6th bits of the register are used to set pull up/down
-	// reset the register then set the mode
-	b.vPage[PadsBank0Offset+pinOffsetBytes] = (b.vPage[PadsBank0Offset+pinOffsetBytes] & 0xf3) | mode
 }
 
 // This is a helper function used to reconfigure the GPIO pins. It looks for the key in the map
@@ -324,7 +322,7 @@ type pinctrlpi5 struct {
 	cancelFunc              func()
 	activeBackgroundWorkers sync.WaitGroup
 
-	pulls map[int]bool // mapping of gpio pin to pull up/down
+	pulls map[int]byte // mapping of gpio pin to pull up/down
 }
 
 // AnalogByName returns the analog pin by the given name if it exists.
