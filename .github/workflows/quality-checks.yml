@@ -1,4 +1,4 @@
-name: run linter on each commit
+name: run  quality checks on each commit
 
 on:
   push:
