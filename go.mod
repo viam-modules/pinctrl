@@ -12,8 +12,6 @@ require (
 	go.viam.com/api v0.1.311
 	go.viam.com/rdk v0.29.2
 	go.viam.com/utils v0.1.79
-	periph.io/x/conn/v3 v3.7.0
-	periph.io/x/host/v3 v3.8.1-0.20230331112814-9f0d9f7d76db
 )
 
 require (
@@ -175,6 +173,8 @@ require (
 	mvdan.cc/interfacer v0.0.0-20180901003855-c20040233aed // indirect
 	mvdan.cc/lint v0.0.0-20170908181259-adc824a0674b // indirect
 	mvdan.cc/unparam v0.0.0-20221223090309-7455f1af531d // indirect
+	periph.io/x/conn/v3 v3.7.0 // indirect
+	periph.io/x/host/v3 v3.8.1-0.20230331112814-9f0d9f7d76db // indirect
 )
 
 require (
@@ -281,7 +281,7 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/goleak v1.2.1 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	go.viam.com/test v1.1.1-0.20220913152726-5da9916c08a2 // indirect
+	go.viam.com/test v1.1.1-0.20220913152726-5da9916c08a2
 	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/exp v0.0.0-20230725012225-302865e7556b // indirect
 	golang.org/x/image v0.15.0 // indirect

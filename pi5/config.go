@@ -4,6 +4,7 @@ package pi5
 import (
 	"fmt"
 
+	"go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 )
@@ -44,7 +45,7 @@ func (cfg *Config) Validate(path string) ([]string, error) {
 // reconfigure based on it.
 type LinuxBoardConfig struct {
 	Pulls        []PullConfig
-	GpioMappings map[string]GPIOBoardMapping
+	GpioMappings map[string]genericlinux.GPIOBoardMapping
 }
 
 // ConfigConverter is a type synonym for a function to turn whatever config we get during
@@ -57,7 +58,7 @@ type ConfigConverter = func(resource.Config, logging.Logger) (*LinuxBoardConfig,
 // ConfigConverter that will use these pin definitions in the underlying config. It is intended to
 // be used for board components whose pin definitions are built into the RDK, such as the
 // BeagleBone or Jetson boards.
-func ConstPinDefs(gpioMappings map[string]GPIOBoardMapping) ConfigConverter {
+func ConstPinDefs(gpioMappings map[string]genericlinux.GPIOBoardMapping) ConfigConverter {
 	return func(conf resource.Config, logger logging.Logger) (*LinuxBoardConfig, error) {
 		newConf, err := resource.NativeConfig[*Config](conf)
 		if err != nil {

@@ -15,10 +15,13 @@ import (
 )
 
 const (
-	gpioName       = "gpio0"
-	gpioMemPath    = "/dev/gpiomem0"
-	dtBaseNodePath = "/proc/device-tree"
+	gpioName    = "gpio0"
+	gpioMemPath = "/dev/gpiomem0"
+	testFolder  = "./mock-device-tree"
+	dtBase      = "/proc/device-tree"
 )
+
+var dtBaseNodePath string
 
 /*
 rangeInfo represents the info provided in the ranges property of a device tree.
@@ -42,7 +45,7 @@ type rangeInfo struct {
 // Cleans file path before opening files in device tree.
 func cleanFilePath(nodePath string) string {
 	nodePath = strings.TrimSpace(nodePath)
-	re := regexp.MustCompile(`[\x00]`) // gets rid of Null Characters in File Path
+	re := regexp.MustCompile(`[\x00-\x1F]`) // gets rid of Null Chars & Non Printable Chars in File Path
 	nodePath = re.ReplaceAllString(nodePath, "")
 	nodePath = filepath.Clean(nodePath)
 	return nodePath
@@ -54,7 +57,7 @@ func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
 	//nolint:gosec
 	nodePathBytes, err := os.ReadFile(dtNodePath)
 	if err != nil {
-		return "", fmt.Errorf("Error reading directory: %w", err)
+		return "", fmt.Errorf("error reading directory: %w", err)
 	}
 
 	// convert readFile output from bytes -> string format
@@ -67,6 +70,10 @@ func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
 // Note that 1 cell is 32 bits, (4 bytes).  numCells is multiplied by 4 to retrieve all 4 bytes associated with the cell.
 func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	var parsedValue uint64
+
+	if numCells < 1 {
+		return 0, fmt.Errorf("attempting to read <1 cells: num was %d", numCells)
+	}
 
 	if len(*byteContents) < int(numCells)*4 {
 		return 0,
@@ -118,6 +125,7 @@ func getNumAddrSizeCells(parentNodePath string) (uint32, uint32, error) {
 	}
 	// reading 4 bytes because the number is represented by 1 uint32. 4bytes * 8bits/byte = 32 bits
 	numAddrSpaceCells := binary.BigEndian.Uint32(npsByteContents[:4])
+
 	return numPAddrCells, numAddrSpaceCells, err
 }
 
@@ -169,6 +177,7 @@ func getRangesAddr(childNodePath string, numCAddrCells, numPAddrCells, numAddrSp
 		}
 
 		rangeInfo := rangeInfo{childAddr: childAddr, parentAddr: parentAddr, addrSpaceSize: addrSpaceSize}
+
 		addrRanges = append(addrRanges, rangeInfo)
 	}
 
@@ -180,7 +189,10 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 	invalidAddr := uint64(math.NaN())
 
 	// Base Case: We are at the root of the device tree.
-	if currNodePath == dtBaseNodePath {
+	// ReplaceAll() accounts for the test case scenario, that uses the local device tree within the pi5 folder.
+	// Having the "./" at the beginning of our file path messes with our path comparisons in the recursive calls, so we
+	// remove it if its there just for the base node comparison step.
+	if currNodePath == strings.ReplaceAll(dtBaseNodePath, "./", "") {
 		return physAddress, nil
 	}
 
@@ -254,7 +266,7 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	fileFlags := os.O_RDWR | os.O_SYNC
 	// 0666 is an octal representation of: file is readable / writeable by anyone
 	//nolint:gosec
-	b.memFile, err = os.OpenFile("/dev/gpiomem0", fileFlags, 0o666)
+	b.memFile, err = os.OpenFile(gpioMemPath, fileFlags, 0o666)
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %w", memPath, err)
 	}
@@ -295,9 +307,18 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 }
 
 // Sets up GPIO pin memory access by parsing the device tree for relevant address information.
-func (b *pinctrlpi5) setupPinControl() error {
+func (b *pinctrlpi5) setupPinControl(testingMode bool) error {
 	// TODO: "gpio0" is hardcoded as the gpioName.
 	// This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
+
+	// If we are running tests, we need to read files/folders from our module's local sample device tree.
+	// This is located at raspi5-pinctrl/pi5/mock-device-tree
+	if testingMode {
+		dtBaseNodePath = testFolder + dtBase
+	} else {
+		dtBaseNodePath = dtBase
+	}
+
 	nodePath, err := b.findPathFromAlias(gpioName)
 	if err != nil {
 		b.logger.Errorf("error getting raspi5 GPIO nodePath")
@@ -308,6 +329,13 @@ func (b *pinctrlpi5) setupPinControl() error {
 	if err != nil {
 		b.logger.Errorf("error getting raspi5 GPIO physical address")
 		return err
+	}
+
+	// In our current pinctrl_test.go we do not have any fake or real board
+	// to run tests with. We exit since we cannot actually access memory,
+	// which means we can't create a virtual page either.
+	if testingMode {
+		return nil
 	}
 
 	err = b.createGPIOVPage(gpioMemPath)
@@ -321,11 +349,11 @@ func (b *pinctrlpi5) setupPinControl() error {
 // Cleans up mapped memory / files related to pin control upon board close() call.
 func (b *pinctrlpi5) cleanupPinControl() error {
 	if err := b.vPage.Unmap(); err != nil {
-		return fmt.Errorf("Error during unmap: %w", err)
+		return fmt.Errorf("error during unmap: %w", err)
 	}
 
 	if err := b.memFile.Close(); err != nil {
-		return fmt.Errorf("Error during memFile closing: %w", err)
+		return fmt.Errorf("error during memFile closing: %w", err)
 	}
 
 	return nil

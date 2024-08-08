@@ -2,11 +2,13 @@
 
 package pi5
 
+import "go.viam.com/rdk/components/board/genericlinux"
+
 // Thanks to "Dan Makes Things" at https://www.makerforge.tech/posts/viam-custom-board-pi5/ for
 // collaborating on setting this up!
-var boardInfoMappings = map[string]BoardInformation{
+var boardInfoMappings = map[string]genericlinux.BoardInformation{
 	"pi5": {
-		PinDefinitions: []PinDefinition{
+		PinDefinitions: []genericlinux.PinDefinition{
 			{Name: "3", DeviceName: "gpiochip4", LineNumber: 2, PwmChipSysfsDir: "", PwmID: -1},
 			{Name: "5", DeviceName: "gpiochip4", LineNumber: 3, PwmChipSysfsDir: "", PwmID: -1},
 			{Name: "7", DeviceName: "gpiochip4", LineNumber: 4, PwmChipSysfsDir: "", PwmID: -1},

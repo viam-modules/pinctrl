@@ -16,6 +16,7 @@ import (
 	"go.viam.com/utils"
 
 	"go.viam.com/rdk/components/board"
+	gl "go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/grpc"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
@@ -25,8 +26,8 @@ import (
 var Model = resource.NewModel("viam-labs", "pinctrl", "rpi5")
 
 func init() {
-	gpioMappings, err := GetGPIOBoardMappings(Model.Name, boardInfoMappings)
-	var noBoardErr NoBoardFoundError
+	gpioMappings, err := gl.GetGPIOBoardMappings(Model.Name, boardInfoMappings)
+	var noBoardErr gl.NoBoardFoundError
 	if errors.As(err, &noBoardErr) {
 		logging.Global().Debugw("Error getting raspi5 GPIO board mapping", "error", err)
 	}
@@ -75,7 +76,7 @@ const (
 
 // RegisterBoard registers a sysfs based board of the given model.
 // using this constructor to pass in the GPIO mappings.
-func RegisterBoard(modelName string, gpioMappings map[string]GPIOBoardMapping) {
+func RegisterBoard(modelName string, gpioMappings map[string]gl.GPIOBoardMapping) {
 	resource.RegisterComponent(
 		board.API,
 		Model,
@@ -86,17 +87,18 @@ func RegisterBoard(modelName string, gpioMappings map[string]GPIOBoardMapping) {
 				conf resource.Config,
 				logger logging.Logger,
 			) (board.Board, error) {
-				return newBoard(ctx, conf, ConstPinDefs(gpioMappings), logger)
+				return newBoard(ctx, conf, ConstPinDefs(gpioMappings), logger, false)
 			},
 		})
 }
 
-// NewBoard is the constructor for a Board.
+// newBoard is the constructor for a Board.
 func newBoard(
 	ctx context.Context,
 	conf resource.Config,
 	convertConfig ConfigConverter,
 	logger logging.Logger,
+	testingMode bool,
 ) (board.Board, error) {
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
@@ -117,7 +119,7 @@ func newBoard(
 
 	// Note that this must be called before reconfigure
 	// the pull up/down configuration uses the memory mapped in this function.
-	if err := b.setupPinControl(); err != nil {
+	if err := b.setupPinControl(testingMode); err != nil {
 		return nil, err
 	}
 
@@ -125,6 +127,9 @@ func newBoard(
 		return nil, err
 	}
 
+	if err := b.setupPinControl(testingMode); err != nil {
+		return nil, err
+	}
 	return b, nil
 }
 
@@ -190,7 +195,7 @@ func (b *pinctrlpi5) setPulls() {
 
 // This is a helper function used to reconfigure the GPIO pins. It looks for the key in the map
 // whose value resembles the target pin definition.
-func getMatchingPin(target GPIOBoardMapping, mapping map[string]GPIOBoardMapping) (string, bool) {
+func getMatchingPin(target gl.GPIOBoardMapping, mapping map[string]gl.GPIOBoardMapping) (string, bool) {
 	for name, def := range mapping {
 		if target == def {
 			return name, true
@@ -235,7 +240,7 @@ func (b *pinctrlpi5) reconfigureGpios(newConf *LinuxBoardConfig) error {
 	// and new pins to create. Don't actually create any yet, in case you'd overwrite a pin that
 	// should be renamed out of the way first.
 	toRename := map[string]string{} // Maps old names for pins to new names
-	toCreate := map[string]GPIOBoardMapping{}
+	toCreate := map[string]gl.GPIOBoardMapping{}
 	for newName, mapping := range newConf.GpioMappings {
 		if oldName, ok := getMatchingPin(mapping, b.gpioMappings); ok {
 			if oldName != newName {
@@ -287,7 +292,7 @@ func (b *pinctrlpi5) reconfigureGpios(newConf *LinuxBoardConfig) error {
 	return nil
 }
 
-func (b *pinctrlpi5) createGpioPin(mapping GPIOBoardMapping) *gpioPin {
+func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
 	pin := gpioPin{
 		boardWorkers: &b.activeBackgroundWorkers,
 		devicePath:   mapping.GPIOChipDev,
@@ -306,7 +311,7 @@ type pinctrlpi5 struct {
 	mu            sync.RWMutex
 	convertConfig ConfigConverter
 
-	gpioMappings map[string]GPIOBoardMapping
+	gpioMappings map[string]gl.GPIOBoardMapping
 	logger       logging.Logger
 
 	gpios      map[string]*gpioPin
@@ -446,7 +451,6 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 // Close attempts to cleanly close each part of the board.
 func (b *pinctrlpi5) Close(ctx context.Context) error {
 	b.mu.Lock()
-
 	err := b.cleanupPinControl()
 	if err != nil {
 		return fmt.Errorf("trouble cleaning up pincontrol memory: %w", err)
