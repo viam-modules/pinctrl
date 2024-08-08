@@ -343,7 +343,7 @@ func (b *pinctrlpi5) setupPinControl(testingMode bool) error {
 		b.logger.Errorf("error creating virtual page from GPIO physical address")
 		return err
 	}
-	return err
+	return nil
 }
 
 // Cleans up mapped memory / files related to pin control upon board close() call.

@@ -2,16 +2,38 @@
 package pi5
 
 import (
-	"go.viam.com/rdk/components/board"
+	"fmt"
+
 	"go.viam.com/rdk/components/board/genericlinux"
-	"go.viam.com/rdk/components/board/mcp3008helper"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 )
 
 // Config defines config.
 type Config struct {
-	resource.TriviallyValidateConfig
+	Pulls []PullConfig `json:"pull,omitempty"`
+}
+
+// PullConfig defines the config for pull up/pull down resistors.
+type PullConfig struct {
+	Pin  string `json:"pin"`
+	Pull string `json:"pull"`
+}
+
+// Validate validates the config.
+func (cfg *Config) Validate(path string) ([]string, error) {
+	for _, c := range cfg.Pulls {
+		if c.Pin == "" {
+			return []string{}, resource.NewConfigValidationFieldRequiredError(path, "pin")
+		}
+		if c.Pull == "" {
+			return []string{}, resource.NewConfigValidationFieldRequiredError(path, "pull")
+		}
+		if !(c.Pull == "up" || c.Pull == "down" || c.Pull == "none") {
+			return []string{}, fmt.Errorf("supported pull config attributes are up, down, and none")
+		}
+	}
+	return []string{}, nil
 }
 
 // LinuxBoardConfig is a struct containing absolutely everything a genericlinux board might need
@@ -22,9 +44,8 @@ type Config struct {
 // go through reconfiguration, we convert the provided config into a LinuxBoardConfig, and then
 // reconfigure based on it.
 type LinuxBoardConfig struct {
-	AnalogReaders     []mcp3008helper.MCP3008AnalogConfig
-	DigitalInterrupts []board.DigitalInterruptConfig
-	GpioMappings      map[string]genericlinux.GPIOBoardMapping
+	Pulls        []PullConfig
+	GpioMappings map[string]genericlinux.GPIOBoardMapping
 }
 
 // ConfigConverter is a type synonym for a function to turn whatever config we get during
@@ -39,8 +60,14 @@ type ConfigConverter = func(resource.Config, logging.Logger) (*LinuxBoardConfig,
 // BeagleBone or Jetson boards.
 func ConstPinDefs(gpioMappings map[string]genericlinux.GPIOBoardMapping) ConfigConverter {
 	return func(conf resource.Config, logger logging.Logger) (*LinuxBoardConfig, error) {
+		newConf, err := resource.NativeConfig[*Config](conf)
+		if err != nil {
+			return nil, err
+		}
+
 		return &LinuxBoardConfig{
 			GpioMappings: gpioMappings,
+			Pulls:        newConf.Pulls,
 		}, nil
 	}
 }

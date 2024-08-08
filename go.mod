@@ -12,7 +12,6 @@ require (
 	go.viam.com/api v0.1.311
 	go.viam.com/rdk v0.29.2
 	go.viam.com/utils v0.1.79
-	periph.io/x/conn/v3 v3.7.0
 )
 
 require (
@@ -174,6 +173,7 @@ require (
 	mvdan.cc/interfacer v0.0.0-20180901003855-c20040233aed // indirect
 	mvdan.cc/lint v0.0.0-20170908181259-adc824a0674b // indirect
 	mvdan.cc/unparam v0.0.0-20221223090309-7455f1af531d // indirect
+	periph.io/x/conn/v3 v3.7.0 // indirect
 	periph.io/x/host/v3 v3.8.1-0.20230331112814-9f0d9f7d76db // indirect
 )
 

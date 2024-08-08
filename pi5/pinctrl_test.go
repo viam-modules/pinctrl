@@ -49,7 +49,7 @@ func TestNewBoard(t *testing.T) {
 	test.That(t, p5.physAddr, test.ShouldEqual, 0x1f000d0000)
 }
 
-// Test pinctrl_utils.go helper functions:
+// Test pinctrl_utils.go helper functions:.
 func TestFindPathFromAlias(t *testing.T) {
 	logger := logging.NewTestLogger(t)
 	ctx := context.Background()
