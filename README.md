@@ -20,7 +20,7 @@ The following attributes are avaliable for pulls:
 | Attribute | Type | Required? | Description |
 | --------- | ---- | --------- | ----------- |
 | `pin` | string | **Required** | The physical pin number |
-| `pull` | string | **Required** | The direction to pull  the pin. Options are `up`, `down` and `none`. |
+| `pull` | string | **Required** | The direction to pull  the pin. Options are `up`, `down` and `none` |
 
 
 ### Example Configuration
