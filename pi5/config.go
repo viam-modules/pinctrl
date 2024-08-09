@@ -17,7 +17,7 @@ type Config struct {
 // PullConfig defines the config for pull up/pull down resistors.
 type PullConfig struct {
 	Pin  string `json:"pin"`
-	Pull string `json:"pull"`
+	Pull string `json:"pulls"`
 }
 
 // Validate validates the config.
