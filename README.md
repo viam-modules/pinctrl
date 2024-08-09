@@ -12,15 +12,15 @@ Currently, the raspberry pi 5 is supported.
 
 ### Attributes
 
-#### pull
+#### `pull`
 The pulls attribute is used to configure pull up and pull down resistors on pins.
 
 The following attributes are avaliable for pulls:
 
 | Attribute | Type | Required? | Description |
 | --------- | ---- | --------- | ----------- |
-| `pin` | string | **Required** | The physical pin number of the pin |
-| `pull` | string | **Required** | The direction to pull  the pin. Options are "up", "down", "none". |
+| `pin` | string | **Required** | The physical pin number |
+| `pull` | string | **Required** | The direction to pull  the pin. Options are `up`, `down` and `none`. |
 
 
 ### Example Configuration
