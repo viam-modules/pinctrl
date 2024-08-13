@@ -128,7 +128,7 @@ func newBoard(
 		b.gpios[newName] = b.createGpioPin(mapping)
 	}
 
-	newConf, err := b.convertConfig(conf, b.logger)
+	newConf, err := resource.NativeConfig[*Config](conf)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func newBoard(
 	return b, nil
 }
 
-func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *LinuxBoardConfig) error {
+func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
 	for _, pullConf := range newConf.Pulls {
 		gpioNum := pinNameToGPIONum[pullConf.Pin]
 		switch pullConf.Pull {

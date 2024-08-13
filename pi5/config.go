@@ -4,8 +4,6 @@ package pi5
 import (
 	"fmt"
 
-	"go.viam.com/rdk/components/board/genericlinux"
-	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 )
 
