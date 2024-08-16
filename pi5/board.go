@@ -192,7 +192,7 @@ func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
 type pinctrlpi5 struct {
 	resource.Named
 	resource.TriviallyReconfigurable
-	mu sync.RWMutex
+	mu sync.Mutex
 
 	gpioMappings map[string]gl.GPIOBoardMapping
 	logger       logging.Logger
