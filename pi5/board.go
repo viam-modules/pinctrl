@@ -117,7 +117,7 @@ func newBoard(
 		pulls:    map[int]byte{},
 	}
 
-	// Note that this must be called before reconfiguring the pull up/down configuration uses the
+	// Note that this must be called before configuring the pull up/down configuration uses the
 	// memory mapped in this function.
 	if err := b.setupPinControl(testingMode); err != nil {
 		return nil, err
@@ -132,14 +132,14 @@ func newBoard(
 	if err != nil {
 		return nil, err
 	}
-	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
+	if err := b.configurePullUpPullDowns(newConf); err != nil {
 		return nil, err
 	}
 
 	return b, nil
 }
 
-func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
+func (b *pinctrlpi5) configurePullUpPullDowns(newConf *Config) error {
 	for _, pullConf := range newConf.Pulls {
 		gpioNum := pinNameToGPIONum[pullConf.Pin]
 		switch pullConf.Pull {
