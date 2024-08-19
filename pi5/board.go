@@ -94,7 +94,7 @@ func RegisterBoard(modelName string, gpioMappings map[string]gl.GPIOBoardMapping
 
 // newBoard is the constructor for a Board.
 func newBoard(
-	_ context.Context,
+	ctx context.Context,
 	conf resource.Config,
 	gpioMappings map[string]gl.GPIOBoardMapping,
 	logger logging.Logger,
@@ -128,18 +128,29 @@ func newBoard(
 		b.gpios[newName] = b.createGpioPin(mapping)
 	}
 
-	newConf, err := resource.NativeConfig[*Config](conf)
-	if err != nil {
-		return nil, err
-	}
-	if err := b.configurePullUpPullDowns(newConf); err != nil {
+	if err := b.Reconfigure(ctx, nil, conf); err != nil {
 		return nil, err
 	}
 
 	return b, nil
 }
 
-func (b *pinctrlpi5) configurePullUpPullDowns(newConf *Config) error {
+func (b *pinctrlpi5) Reconfigure(
+	ctx context.Context,
+	deps resource.Dependencies,
+	conf resource.Config,
+) error {
+	newConf, err := resource.NativeConfig[*Config](conf)
+	if err != nil {
+		return err
+	}
+	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
+		return err
+	}
+    return nil
+}
+
+func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
 	for _, pullConf := range newConf.Pulls {
 		gpioNum := pinNameToGPIONum[pullConf.Pin]
 		switch pullConf.Pull {
@@ -191,7 +202,6 @@ func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
 
 type pinctrlpi5 struct {
 	resource.Named
-	resource.TriviallyReconfigurable
 	mu sync.Mutex
 
 	gpioMappings map[string]gl.GPIOBoardMapping
