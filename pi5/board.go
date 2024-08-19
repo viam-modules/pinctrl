@@ -144,10 +144,14 @@ func (b *pinctrlpi5) Reconfigure(
 	if err != nil {
 		return err
 	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
 		return err
 	}
-    return nil
+	return nil
 }
 
 func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
