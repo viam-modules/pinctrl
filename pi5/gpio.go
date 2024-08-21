@@ -347,6 +347,10 @@ func (pin *gpioPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[strin
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
+	if freqHz < 1 {
+		return errors.New("must set PWM frequency to a positive value")
+	}
+
 	pin.pwmFreqHz = freqHz
 	return pin.startSoftwarePWM()
 }
