@@ -4,6 +4,7 @@ package pi5
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -315,6 +316,19 @@ func (pin *gpioPin) PWM(ctx context.Context, extra map[string]interface{}) (floa
 func (pin *gpioPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[string]interface{}) error {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
+
+	// Make sure the duty cycle we receive is believable.
+	if dutyCyclePct < 0.0 {
+		return errors.New("cannot set negative duty cycle")
+	}
+	if dutyCyclePct > 1.0 {
+		if dutyCyclePct < 1.01 {
+			// Someone was probably setting it to 1 and had a roundoff error.
+			dutyCyclePct = 1.0
+		} else {
+			return fmt.Errorf("cannot set duty cycle to %f: range is 0.0 to 1.0", dutyCyclePct)
+		}
+	}
 
 	pin.pwmDutyCyclePct = dutyCyclePct
 	return pin.startSoftwarePWM()
