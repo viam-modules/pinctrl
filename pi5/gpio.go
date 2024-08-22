@@ -4,7 +4,6 @@ package pi5
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"go.viam.com/utils"
 
+	"go.viam.com/rdk/components/board"
 	"go.viam.com/rdk/logging"
 )
 
@@ -317,17 +317,9 @@ func (pin *gpioPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
-	// Make sure the duty cycle we receive is believable.
-	if dutyCyclePct < 0.0 {
-		return errors.New("cannot set negative duty cycle")
-	}
-	if dutyCyclePct > 1.0 {
-		if dutyCyclePct < 1.01 {
-			// Someone was probably setting it to 1 and had a roundoff error.
-			dutyCyclePct = 1.0
-		} else {
-			return fmt.Errorf("cannot set duty cycle to %f: range is 0.0 to 1.0", dutyCyclePct)
-		}
+	dutyCyclePct, err := board.ValidatePWMDutyCycle(dutyCyclePct)
+	if err != nil {
+		return err
 	}
 
 	pin.pwmDutyCyclePct = dutyCyclePct
