@@ -1,4 +1,4 @@
-module pinctrl
+module github.com/viam-modules/pinctrl
 
 go 1.22.4
 

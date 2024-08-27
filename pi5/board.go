@@ -87,7 +87,7 @@ func RegisterBoard(modelName string, gpioMappings map[string]gl.GPIOBoardMapping
 				conf resource.Config,
 				logger logging.Logger,
 			) (board.Board, error) {
-				return newBoard(ctx, conf, ConstPinDefs(gpioMappings), logger, false)
+				return newBoard(ctx, conf, gpioMappings, logger, false)
 			},
 		})
 }
@@ -96,19 +96,19 @@ func RegisterBoard(modelName string, gpioMappings map[string]gl.GPIOBoardMapping
 func newBoard(
 	ctx context.Context,
 	conf resource.Config,
-	convertConfig ConfigConverter,
+	gpioMappings map[string]gl.GPIOBoardMapping,
 	logger logging.Logger,
 	testingMode bool,
 ) (board.Board, error) {
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
 	b := &pinctrlpi5{
-		Named:         conf.ResourceName().AsNamed(),
-		convertConfig: convertConfig,
+		Named: conf.ResourceName().AsNamed(),
 
-		logger:     logger,
-		cancelCtx:  cancelCtx,
-		cancelFunc: cancelFunc,
+		gpioMappings: gpioMappings,
+		logger:       logger,
+		cancelCtx:    cancelCtx,
+		cancelFunc:   cancelFunc,
 
 		gpios:      map[string]*gpioPin{},
 		interrupts: map[string]*digitalInterrupt{},
@@ -117,29 +117,30 @@ func newBoard(
 		pulls:    map[int]byte{},
 	}
 
-	// Note that this must be called before reconfigure
-	// the pull up/down configuration uses the memory mapped in this function.
+	// Note that this must be called before configuring the pull up/down configuration uses the
+	// memory mapped in this function.
 	if err := b.setupPinControl(testingMode); err != nil {
 		return nil, err
+	}
+
+	// Initialize the GPIO pins
+	for newName, mapping := range gpioMappings {
+		b.gpios[newName] = b.createGpioPin(mapping)
 	}
 
 	if err := b.Reconfigure(ctx, nil, conf); err != nil {
 		return nil, err
 	}
 
-	if err := b.setupPinControl(testingMode); err != nil {
-		return nil, err
-	}
 	return b, nil
 }
 
-// Reconfigure reconfigures the board.
 func (b *pinctrlpi5) Reconfigure(
 	ctx context.Context,
-	_ resource.Dependencies,
+	deps resource.Dependencies,
 	conf resource.Config,
 ) error {
-	newConf, err := b.convertConfig(conf, b.logger)
+	newConf, err := resource.NativeConfig[*Config](conf)
 	if err != nil {
 		return err
 	}
@@ -147,17 +148,13 @@ func (b *pinctrlpi5) Reconfigure(
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if err := b.reconfigureGpios(newConf); err != nil {
-		return err
-	}
-
 	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *LinuxBoardConfig) error {
+func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
 	for _, pullConf := range newConf.Pulls {
 		gpioNum := pinNameToGPIONum[pullConf.Pin]
 		switch pullConf.Pull {
@@ -193,105 +190,6 @@ func (b *pinctrlpi5) setPulls() {
 	}
 }
 
-// This is a helper function used to reconfigure the GPIO pins. It looks for the key in the map
-// whose value resembles the target pin definition.
-func getMatchingPin(target gl.GPIOBoardMapping, mapping map[string]gl.GPIOBoardMapping) (string, bool) {
-	for name, def := range mapping {
-		if target == def {
-			return name, true
-		}
-	}
-	return "", false
-}
-
-func (b *pinctrlpi5) reconfigureGpios(newConf *LinuxBoardConfig) error {
-	// First, find old pins that are no longer defined, and destroy them.
-	for oldName, mapping := range b.gpioMappings {
-		if _, ok := getMatchingPin(mapping, newConf.GpioMappings); ok {
-			continue // This pin is in the new mapping, so don't destroy it.
-		}
-
-		// Otherwise, remove the pin because it's not in the new mapping.
-		if pin, ok := b.gpios[oldName]; ok {
-			if err := pin.Close(); err != nil {
-				return err
-			}
-			delete(b.gpios, oldName)
-			continue
-		}
-
-		// If we get here, the old pin definition exists, but the old pin does not. Check if it's a
-		// digital interrupt.
-		if interrupt, ok := b.interrupts[oldName]; ok {
-			if err := interrupt.Close(); err != nil {
-				return err
-			}
-			delete(b.interrupts, oldName)
-			continue
-		}
-
-		// If we get here, there is a logic bug somewhere. but failing to delete a nonexistent pin
-		// seemingly doesn't hurt anything, so just log the error and continue.
-		b.logger.Errorf("During reconfiguration, old pin '%s' should be destroyed, but "+
-			"it doesn't exist!?", oldName)
-	}
-
-	// Next, compare the new pin definitions to the old ones, to build up 2 sets: pins to rename,
-	// and new pins to create. Don't actually create any yet, in case you'd overwrite a pin that
-	// should be renamed out of the way first.
-	toRename := map[string]string{} // Maps old names for pins to new names
-	toCreate := map[string]gl.GPIOBoardMapping{}
-	for newName, mapping := range newConf.GpioMappings {
-		if oldName, ok := getMatchingPin(mapping, b.gpioMappings); ok {
-			if oldName != newName {
-				toRename[oldName] = newName
-			}
-		} else {
-			toCreate[newName] = mapping
-		}
-	}
-
-	// Rename the ones whose name changed. The ordering here is tricky: if B should be renamed to C
-	// while A should be renamed to B, we need to make sure we don't overwrite B with A and then
-	// rename it to C. To avoid this, move all the pins to rename into a temporary data structure,
-	// then move them all back again afterward.
-	tempGpios := map[string]*gpioPin{}
-	tempInterrupts := map[string]*digitalInterrupt{}
-	for oldName, newName := range toRename {
-		if pin, ok := b.gpios[oldName]; ok {
-			tempGpios[newName] = pin
-			delete(b.gpios, oldName)
-			continue
-		}
-
-		// If we get here, again check if the missing pin is a digital interrupt.
-		if interrupt, ok := b.interrupts[oldName]; ok {
-			tempInterrupts[newName] = interrupt
-			delete(b.interrupts, oldName)
-			continue
-		}
-
-		return fmt.Errorf("during reconfiguration, old pin '%s' should be renamed to '%s', but "+
-			"it doesn't exist!?", oldName, newName)
-	}
-
-	// Now move all the pins back from the temporary data structures.
-	for newName, pin := range tempGpios {
-		b.gpios[newName] = pin
-	}
-	for newName, interrupt := range tempInterrupts {
-		b.interrupts[newName] = interrupt
-	}
-
-	// Finally, create the new pins.
-	for newName, mapping := range toCreate {
-		b.gpios[newName] = b.createGpioPin(mapping)
-	}
-
-	b.gpioMappings = newConf.GpioMappings
-	return nil
-}
-
 func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
 	pin := gpioPin{
 		boardWorkers: &b.activeBackgroundWorkers,
@@ -308,8 +206,7 @@ func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
 
 type pinctrlpi5 struct {
 	resource.Named
-	mu            sync.RWMutex
-	convertConfig ConfigConverter
+	mu sync.Mutex
 
 	gpioMappings map[string]gl.GPIOBoardMapping
 	logger       logging.Logger
