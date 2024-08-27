@@ -9,13 +9,13 @@ import (
 
 // Config defines config.
 type Config struct {
-	Pulls []PullConfig `json:"pull,omitempty"`
+	Pulls []PullConfig `json:"pulls,omitempty"`
 }
 
 // PullConfig defines the config for pull up/pull down resistors.
 type PullConfig struct {
 	Pin  string `json:"pin"`
-	Pull string `json:"pulls"`
+	Pull string `json:"pull"`
 }
 
 // Validate validates the config.
