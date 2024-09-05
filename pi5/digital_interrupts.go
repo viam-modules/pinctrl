@@ -14,11 +14,10 @@ import (
 
 	"go.viam.com/rdk/components/board"
 	"go.viam.com/rdk/components/board/genericlinux"
-	rdkutils "go.viam.com/rdk/utils"
 )
 
 type digitalInterrupt struct {
-	workers  rdkutils.StoppableWorkers
+	workers  *utils.StoppableWorkers
 	line     *gpio.LineWithEvent
 	mu       sync.Mutex // Protects everything below here
 	config   board.DigitalInterruptConfig
@@ -47,7 +46,7 @@ func newDigitalInterrupt(
 	}
 
 	di := digitalInterrupt{line: line, config: config}
-	di.workers = rdkutils.NewStoppableWorkers(di.monitor)
+	di.workers = utils.NewBackgroundStoppableWorkers(di.monitor)
 
 	if oldInterrupt != nil {
 		oldInterrupt.mu.Lock()
