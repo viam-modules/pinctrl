@@ -1,3 +1,4 @@
 *.local
 maria@raspberrypi
 bin/
+.DS_Store
