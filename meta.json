@@ -1,12 +1,12 @@
 {
-    "module_id": "viam-labs:pinctrl",
+    "module_id": "very-real:pinctrl",
     "visibility": "private",
     "url": "https://github.com/viam-modules/pinctrl",
-    "description": "Viam Go module for raspberry pi board and servo",
+    "description": "Viam Go module for raspberry pi 5",
     "models": [
       {
         "api": "rdk:component:board",
-        "model":"viam-labs:pinctrl:rpi5"
+        "model":"very-real:pinctrl:rpi5"
       }
     ],
     "build": {
