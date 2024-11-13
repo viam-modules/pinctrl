@@ -4,12 +4,13 @@ package pinctrl
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	mmap "github.com/edsrzf/mmap-go"
 	"github.com/mkch/gpio"
-	"github.com/pkg/errors"
 	"go.viam.com/rdk/components/board"
 	gl "go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/logging"
@@ -62,7 +63,7 @@ func CreateGpioPin(cancelCtx context.Context, mapping gl.GPIOBoardMapping, worke
 }
 
 func (pin *gpioPin) wrapError(err error) error {
-	return errors.Wrapf(err, "from GPIO device %s line %d", pin.devicePath, pin.offset)
+	return errors.Join(err, fmt.Errorf("from GPIO device %s line %d", pin.devicePath, pin.offset))
 }
 
 // This is a private helper function that should only be called when the mutex is locked. It sets

@@ -4,13 +4,13 @@ package pi5
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	mmap "github.com/edsrzf/mmap-go"
-	"github.com/pkg/errors"
 	"github.com/viam-modules/pinctrl/pinctrl"
 	"go.uber.org/multierr"
 	pb "go.viam.com/api/component/board/v1"
@@ -285,7 +285,7 @@ func (b *pinctrlpi5) GPIOPinByName(pinName string) (board.GPIOPin, error) {
 		return interrupt, nil
 	}
 
-	return nil, errors.Errorf("cannot find GPIO for unknown pin: %s", pinName)
+	return nil, fmt.Errorf("cannot find GPIO for unknown pin: %s", pinName)
 }
 
 // SetPowerMode sets the board to the given power mode. If provided,

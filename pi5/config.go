@@ -2,7 +2,8 @@
 package pi5
 
 import (
-	"github.com/pkg/errors"
+	"errors"
+
 	"go.viam.com/rdk/resource"
 )
 

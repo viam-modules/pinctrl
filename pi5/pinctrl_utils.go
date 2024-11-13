@@ -4,6 +4,7 @@ package pi5
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -12,7 +13,6 @@ import (
 	"strings"
 
 	mmap "github.com/edsrzf/mmap-go"
-	"github.com/pkg/errors"
 )
 
 const (
