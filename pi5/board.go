@@ -9,19 +9,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/viam-modules/pinctrl/pinctrl"
-
 	mmap "github.com/edsrzf/mmap-go"
 	"github.com/pkg/errors"
+	"github.com/viam-modules/pinctrl/pinctrl"
 	"go.uber.org/multierr"
 	pb "go.viam.com/api/component/board/v1"
-	"go.viam.com/utils"
-
 	"go.viam.com/rdk/components/board"
 	gl "go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/grpc"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
+	"go.viam.com/utils"
 )
 
 // Model for rpi5.
@@ -167,7 +165,7 @@ func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
 		case "down":
 			b.pulls[gpioNum] = pullDownMode
 		default:
-			return fmt.Errorf("unexpected pull")
+			return errors.New("unexpected pull")
 		}
 
 		b.setPulls()

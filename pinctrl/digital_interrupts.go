@@ -10,12 +10,12 @@ import (
 
 	"github.com/mkch/gpio"
 	"go.uber.org/multierr"
-	"go.viam.com/utils"
-
 	"go.viam.com/rdk/components/board"
 	"go.viam.com/rdk/components/board/genericlinux"
+	"go.viam.com/utils"
 )
 
+// DigitalInterrupt is the struct for managing a digital interrupt.
 type DigitalInterrupt struct {
 	*digitalInterrupt
 }
@@ -28,7 +28,7 @@ type digitalInterrupt struct {
 	channels []chan board.Tick
 }
 
-// newDigitalInterrupt constructs a new digitalInterrupt from the config and pinMapping. If
+// NewDigitalInterrupt constructs a new digitalInterrupt from the config and pinMapping. If
 // oldInterrupt is not nil, all channels added to it are added to the new interrupt and removed
 // from the old one.
 func NewDigitalInterrupt(

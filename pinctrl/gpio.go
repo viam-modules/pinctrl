@@ -10,11 +10,10 @@ import (
 	mmap "github.com/edsrzf/mmap-go"
 	"github.com/mkch/gpio"
 	"github.com/pkg/errors"
-	gl "go.viam.com/rdk/components/board/genericlinux"
-	"go.viam.com/utils"
-
 	"go.viam.com/rdk/components/board"
+	gl "go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/utils"
 )
 
 const noPin = 0xFFFFFFFF // noPin is the uint32 version of -1. A pin with this offset has no GPIO
@@ -40,11 +39,15 @@ type gpioPin struct {
 	swPwmCancel func()
 }
 
+// GPIOPin is the struct defining a GPIOPin.
 type GPIOPin struct {
 	*gpioPin
 }
 
-func CreateGpioPin(cancelCtx context.Context, mapping gl.GPIOBoardMapping, workers *sync.WaitGroup, logger logging.Logger, gpioPinsPage *mmap.MMap) *GPIOPin {
+// CreateGpioPin creates a gpio pin.
+func CreateGpioPin(cancelCtx context.Context, mapping gl.GPIOBoardMapping, workers *sync.WaitGroup,
+	logger logging.Logger, gpioPinsPage *mmap.MMap,
+) *GPIOPin {
 	pin := gpioPin{
 		boardWorkers: workers,
 		devicePath:   mapping.GPIOChipDev,

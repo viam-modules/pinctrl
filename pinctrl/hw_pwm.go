@@ -1,6 +1,6 @@
 //go:build linux
 
-// Package pi5 implements pi5
+// Package pinctrl implements pinctrl
 package pinctrl
 
 import (
@@ -11,9 +11,8 @@ import (
 
 	mmap "github.com/edsrzf/mmap-go"
 	"github.com/pkg/errors"
-	goutils "go.viam.com/utils"
-
 	"go.viam.com/rdk/logging"
+	goutils "go.viam.com/utils"
 )
 
 // There are times when we need to set the period to some value, any value. It must be a positive
@@ -94,6 +93,7 @@ func newPwmDevice(chipPath string, line int, logger logging.Logger, gpioPinsPage
 
 func writeValue(filepath string, value uint64, logger logging.Logger) error {
 	logger.Debugf("Writing %d to %s", value, filepath)
+	//nolint:perfsprint
 	data := []byte(fmt.Sprintf("%d", value))
 	// The file permissions (the third argument) aren't important: if the file needs to be created,
 	// something has gone horribly wrong!
@@ -259,7 +259,7 @@ func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
 	case 3:
 		err = pwm.writeToPinModeByte(19, pinMode)
 	default:
-		return fmt.Errorf("attempting to use unknown PWM line")
+		return errors.New("attempting to use unknown PWM line")
 	}
 
 	return err

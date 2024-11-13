@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	mmap "github.com/edsrzf/mmap-go"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -162,18 +163,18 @@ func getRangesAddr(childNodePath string, numCAddrCells, numPAddrCells, numAddrSp
 	// read and decipher bytes for child address, parent address, and address space length from /ranges
 	numRanges := uint32(len(rangeByteContents)) / (4 * (numCAddrCells + numPAddrCells + numAddrSpaceCells))
 
-	for i := uint32(0); i < numRanges; i++ {
+	for range numRanges {
 		childAddr, err := parseCells(numCAddrCells, &rangeByteContents)
 		if err != nil {
-			return []rangeInfo{}, fmt.Errorf("error getting child address")
+			return []rangeInfo{}, errors.New("error getting child address")
 		}
 		parentAddr, err := parseCells(numPAddrCells, &rangeByteContents)
 		if err != nil {
-			return []rangeInfo{}, fmt.Errorf("error getting parent address")
+			return []rangeInfo{}, errors.New("error getting parent address")
 		}
 		addrSpaceSize, err := parseCells(numAddrSpaceCells, &rangeByteContents)
 		if err != nil {
-			return []rangeInfo{}, fmt.Errorf("error getting address space size")
+			return []rangeInfo{}, errors.New("error getting address space size")
 		}
 
 		rangeInfo := rangeInfo{childAddr: childAddr, parentAddr: parentAddr, addrSpaceSize: addrSpaceSize}
