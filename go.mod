@@ -1,6 +1,6 @@
 module github.com/viam-modules/pinctrl
 
-go 1.22.4
+go 1.23.0
 
 require (
 	github.com/edaniels/golinters v0.0.5-0.20220906153528-641155550742

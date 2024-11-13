@@ -1,7 +1,8 @@
 TOOL_BIN = bin/gotools/$(shell uname -s)-$(shell uname -m)
-EXECUTABLE_BIN = bin/$(shell uname -s)-$(shell uname -m)
+EXECUTABLE_BIN = bin
 
 build:
+	rm -f $(EXECUTABLE_BIN)/pinctrl
 	go build -o "$(EXECUTABLE_BIN)/"
 
 tool-install:
@@ -16,3 +17,7 @@ lint: tool-install
 
 test:
 	go test ./...
+
+module: build
+	rm -f $(EXECUTABLE_BIN)/pinctrl.tar.gz
+	tar czf $(EXECUTABLE_BIN)/pinctrl.tar.gz $(EXECUTABLE_BIN)/pinctrl meta.json
