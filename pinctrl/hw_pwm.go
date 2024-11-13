@@ -1,7 +1,7 @@
 //go:build linux
 
 // Package pi5 implements pi5
-package pi5
+package pinctrl
 
 import (
 	"fmt"

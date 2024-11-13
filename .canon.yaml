@@ -1,0 +1,10 @@
+# This file provides project-level configuration for the canon dev environment utility. https://github.com/viamrobotics/canon
+pinctrl:
+    default: true
+    arch: arm64
+    image_arm64: ghcr.io/viamrobotics/rdk-devenv:arm64-cache
+    minimum_date: 2024-08-21T00:00:00.0Z
+    update_interval: 168h0m0s
+    user: testbot
+    group: testbot
+    persistent: true

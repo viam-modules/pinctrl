@@ -1,6 +1,6 @@
 //go:build linux
 
-package pi5
+package pinctrl
 
 import (
 	"context"
@@ -16,6 +16,9 @@ import (
 	"go.viam.com/rdk/components/board/genericlinux"
 )
 
+type DigitalInterrupt struct {
+	*digitalInterrupt
+}
 type digitalInterrupt struct {
 	workers  *utils.StoppableWorkers
 	line     *gpio.LineWithEvent
@@ -28,11 +31,11 @@ type digitalInterrupt struct {
 // newDigitalInterrupt constructs a new digitalInterrupt from the config and pinMapping. If
 // oldInterrupt is not nil, all channels added to it are added to the new interrupt and removed
 // from the old one.
-func newDigitalInterrupt(
+func NewDigitalInterrupt(
 	config board.DigitalInterruptConfig,
 	pinMapping genericlinux.GPIOBoardMapping,
 	oldInterrupt *digitalInterrupt,
-) (*digitalInterrupt, error) {
+) (*DigitalInterrupt, error) {
 	chip, err := gpio.OpenChip(pinMapping.GPIOChipDev)
 	if err != nil {
 		return nil, err
@@ -54,7 +57,8 @@ func newDigitalInterrupt(
 		di.channels = oldInterrupt.channels
 		oldInterrupt.channels = []chan board.Tick{}
 	}
-	return &di, nil
+
+	return &DigitalInterrupt{digitalInterrupt: &di}, nil
 }
 
 func (di *digitalInterrupt) UpdateConfig(newConfig board.DigitalInterruptConfig) {

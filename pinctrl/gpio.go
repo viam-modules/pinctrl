@@ -1,14 +1,16 @@
 //go:build linux
 
-package pi5
+package pinctrl
 
 import (
 	"context"
 	"sync"
 	"time"
 
+	mmap "github.com/edsrzf/mmap-go"
 	"github.com/mkch/gpio"
 	"github.com/pkg/errors"
+	gl "go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/utils"
 
 	"go.viam.com/rdk/components/board"
@@ -36,6 +38,24 @@ type gpioPin struct {
 	logger    logging.Logger
 
 	swPwmCancel func()
+}
+
+type GPIOPin struct {
+	*gpioPin
+}
+
+func CreateGpioPin(cancelCtx context.Context, mapping gl.GPIOBoardMapping, workers *sync.WaitGroup, logger logging.Logger, gpioPinsPage *mmap.MMap) *GPIOPin {
+	pin := gpioPin{
+		boardWorkers: workers,
+		devicePath:   mapping.GPIOChipDev,
+		offset:       uint32(mapping.GPIO),
+		cancelCtx:    cancelCtx,
+		logger:       logger,
+	}
+	if mapping.HWPWMSupported {
+		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, logger, gpioPinsPage)
+	}
+	return &GPIOPin{gpioPin: &pin}
 }
 
 func (pin *gpioPin) wrapError(err error) error {
