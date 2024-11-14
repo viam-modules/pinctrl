@@ -34,7 +34,7 @@ type digitalInterrupt struct {
 func NewDigitalInterrupt(
 	config board.DigitalInterruptConfig,
 	pinMapping genericlinux.GPIOBoardMapping,
-	oldInterrupt *digitalInterrupt,
+	oldInterrupt *DigitalInterrupt,
 ) (*DigitalInterrupt, error) {
 	chip, err := gpio.OpenChip(pinMapping.GPIOChipDev)
 	if err != nil {
