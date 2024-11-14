@@ -15,7 +15,7 @@ import (
 	"go.viam.com/utils"
 )
 
-// DigitalInterrupt is the struct for managing a digital interrupt that satisfies a board.DigitalInterrupt
+// DigitalInterrupt is the struct for managing a digital interrupt that satisfies a board.DigitalInterrupt.
 type DigitalInterrupt struct {
 	workers  *utils.StoppableWorkers
 	line     *gpio.LineWithEvent
@@ -58,12 +58,14 @@ func NewDigitalInterrupt(
 	return &di, nil
 }
 
+// UpdateConfig updates the config for the interrupt.
 func (di *DigitalInterrupt) UpdateConfig(newConfig board.DigitalInterruptConfig) {
 	di.mu.Lock()
 	defer di.mu.Unlock()
 	di.config = newConfig
 }
 
+// Close closes the interrupt.
 func (di *DigitalInterrupt) Close() error {
 	di.workers.Stop()
 
@@ -79,12 +81,14 @@ func (di *DigitalInterrupt) Close() error {
 	return multierr.Combine(err, di.line.Close())
 }
 
+// Name returns the name of the interrupt.
 func (di *DigitalInterrupt) Name() string {
 	di.mu.Lock()
 	defer di.mu.Unlock()
 	return di.config.Name
 }
 
+// Value gets the current count of interrupt triggers.
 func (di *DigitalInterrupt) Value(
 	ctx context.Context,
 	extra map[string]interface{},
@@ -158,12 +162,14 @@ func (di *DigitalInterrupt) RemoveChannel(ch chan board.Tick) {
 // You can also get the current value from a digitalInterrupt pin. To do this, we provide the
 // entire board.GPIOPin interface.
 
+// Set is an unimplemented placeholder for GPIOPin.Set().
 func (di *DigitalInterrupt) Set(
 	ctx context.Context, isHigh bool, extra map[string]interface{},
 ) error {
 	return errors.New("cannot set value of a digital interrupt pin")
 }
 
+// Get reads the current value of the interrupt pin.
 func (di *DigitalInterrupt) Get(ctx context.Context, extra map[string]interface{}) (bool, error) {
 	value, err := di.line.Value()
 	if err != nil {
@@ -174,22 +180,26 @@ func (di *DigitalInterrupt) Get(ctx context.Context, extra map[string]interface{
 	return (value != 0), nil
 }
 
+// PWM is an unimplemented placeholder for GPIOPin.PWM().
 func (di *DigitalInterrupt) PWM(ctx context.Context, extra map[string]interface{}) (float64, error) {
 	return 0, errors.New("cannot get PWM of a digital interrupt pin")
 }
 
+// SetPWM is an unimplemented placeholder for GPIOPin.SetPWM().
 func (di *DigitalInterrupt) SetPWM(
 	ctx context.Context, dutyCyclePct float64, extra map[string]interface{},
 ) error {
 	return errors.New("cannot set PWM of a digital interrupt pin")
 }
 
+// PWMFreq is an unimplemented placeholder for GPIOPin.PWMFreq().
 func (di *DigitalInterrupt) PWMFreq(
 	ctx context.Context, extra map[string]interface{},
 ) (uint, error) {
 	return 0, errors.New("cannot get PWM freq of a digital interrupt pin")
 }
 
+// SetPWMFreq is an unimplemented placeholder for GPIOPin.SetPWMFreq().
 func (di *DigitalInterrupt) SetPWMFreq(
 	ctx context.Context, freqHz uint, extra map[string]interface{},
 ) error {

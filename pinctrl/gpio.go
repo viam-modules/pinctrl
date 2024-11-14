@@ -19,7 +19,7 @@ import (
 
 const noPin = 0xFFFFFFFF // noPin is the uint32 version of -1. A pin with this offset has no GPIO
 
-// GPIOPin is the struct defining a GPIOPin that satisfies a board.GPIOPin
+// GPIOPin is the struct defining a GPIOPin that satisfies a board.GPIOPin.
 type GPIOPin struct {
 	softwarePWMWorkers *utils.StoppableWorkers
 
@@ -118,7 +118,7 @@ func (pin *GPIOPin) closeGpioFd() error {
 	return nil
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
+// Set implements Set from the board.GPIOPin interface.
 func (pin *GPIOPin) Set(ctx context.Context, isHigh bool,
 	extra map[string]interface{},
 ) (err error) {
@@ -159,7 +159,7 @@ func (pin *GPIOPin) setInternal(isHigh bool) (err error) {
 	return pin.wrapError(pin.line.SetValue(value))
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
+// Get impments Get from the board.GPIOPin interface.
 func (pin *GPIOPin) Get(
 	ctx context.Context, extra map[string]interface{},
 ) (result bool, err error) {
@@ -314,7 +314,7 @@ func (pin *GPIOPin) softwarePwmLoop(ctx context.Context) {
 	}
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
+// PWM implements PWM from the board.GPIOPin interface.
 func (pin *GPIOPin) PWM(ctx context.Context, extra map[string]interface{}) (float64, error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
@@ -322,7 +322,7 @@ func (pin *GPIOPin) PWM(ctx context.Context, extra map[string]interface{}) (floa
 	return pin.pwmDutyCyclePct, nil
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
+// SetPWM implements SetPWM the board.GPIOPin interface.
 func (pin *GPIOPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[string]interface{}) error {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
@@ -336,7 +336,7 @@ func (pin *GPIOPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[
 	return pin.startSoftwarePWM()
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
+// PWMFreq implements PWMFreq from the board.GPIOPin interface.
 func (pin *GPIOPin) PWMFreq(ctx context.Context, extra map[string]interface{}) (uint, error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
@@ -344,7 +344,7 @@ func (pin *GPIOPin) PWMFreq(ctx context.Context, extra map[string]interface{}) (
 	return pin.pwmFreqHz, nil
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
+// SetPWMFreq implements SetPWMFreq the board.GPIOPin interface.
 func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[string]interface{}) error {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
@@ -357,8 +357,8 @@ func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[strin
 	return pin.startSoftwarePWM()
 }
 
+// Close closes the GPIOPin and any pwm related features on the pin.
 func (pin *GPIOPin) Close() error {
-
 	// stop any software pwm running on the pin
 	// the software PWM loop locks the pin, so we need to stop the worker before locking the pin to close it
 	if pin.softwarePWMWorkers != nil {
