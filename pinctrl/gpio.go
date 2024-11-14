@@ -20,7 +20,7 @@ import (
 const noPin = 0xFFFFFFFF // noPin is the uint32 version of -1. A pin with this offset has no GPIO
 
 type gpioPin struct {
-	boardWorkers *sync.WaitGroup
+	softwarePWMWorkers *utils.StoppableWorkers
 
 	// These values should both be considered immutable.
 	devicePath string
@@ -33,11 +33,8 @@ type gpioPin struct {
 	pwmFreqHz       uint
 	pwmDutyCyclePct float64
 
-	mu        sync.Mutex
-	cancelCtx context.Context
-	logger    logging.Logger
-
-	swPwmCancel func()
+	mu     sync.Mutex
+	logger logging.Logger
 }
 
 // GPIOPin is the struct defining a GPIOPin.
@@ -46,15 +43,11 @@ type GPIOPin struct {
 }
 
 // CreateGpioPin creates a gpio pin.
-func CreateGpioPin(cancelCtx context.Context, mapping gl.GPIOBoardMapping, workers *sync.WaitGroup,
-	logger logging.Logger, gpioPinsPage *mmap.MMap,
-) *GPIOPin {
+func CreateGpioPin(mapping gl.GPIOBoardMapping, gpioPinsPage *mmap.MMap, logger logging.Logger) *GPIOPin {
 	pin := gpioPin{
-		boardWorkers: workers,
-		devicePath:   mapping.GPIOChipDev,
-		offset:       uint32(mapping.GPIO),
-		cancelCtx:    cancelCtx,
-		logger:       logger,
+		devicePath: mapping.GPIOChipDev,
+		offset:     uint32(mapping.GPIO),
+		logger:     logger,
 	}
 	if mapping.HWPWMSupported {
 		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, logger, gpioPinsPage)
@@ -137,9 +130,9 @@ func (pin *gpioPin) Set(ctx context.Context, isHigh bool,
 	defer pin.mu.Unlock()
 
 	// Shut down any software PWM loop that might be running.
-	if pin.swPwmCancel != nil {
-		pin.swPwmCancel()
-		pin.swPwmCancel = nil
+	if pin.softwarePWMWorkers != nil {
+		pin.softwarePWMWorkers.Stop()
+		pin.softwarePWMWorkers = nil
 	}
 
 	return pin.setInternal(isHigh)
@@ -199,9 +192,9 @@ func (pin *gpioPin) Get(
 func (pin *gpioPin) startSoftwarePWM() error {
 	if pin.pwmDutyCyclePct == 0 || pin.pwmFreqHz == 0 {
 		// We don't have both parameters set up. Stop any PWM loop we might have started previously.
-		if pin.swPwmCancel != nil {
-			pin.swPwmCancel()
-			pin.swPwmCancel = nil
+		if pin.softwarePWMWorkers != nil {
+			pin.softwarePWMWorkers.Stop()
+			pin.softwarePWMWorkers = nil
 		}
 		if pin.hwPwm != nil {
 			return pin.hwPwm.Close()
@@ -218,9 +211,9 @@ func (pin *gpioPin) startSoftwarePWM() error {
 				return err
 			}
 			// Shut down any software PWM loop that might be running.
-			if pin.swPwmCancel != nil {
-				pin.swPwmCancel()
-				pin.swPwmCancel = nil
+			if pin.softwarePWMWorkers != nil {
+				pin.softwarePWMWorkers.Stop()
+				pin.softwarePWMWorkers = nil
 			}
 			return pin.hwPwm.SetPwm(pin.pwmFreqHz, pin.pwmDutyCyclePct)
 		}
@@ -235,15 +228,12 @@ func (pin *gpioPin) startSoftwarePWM() error {
 	// If we get here, we need a software loop to drive the PWM signal, either because this pin
 	// doesn't have hardware support or because we want to drive it at such a low frequency that
 	// the hardware chip can't do it.
-	if pin.swPwmCancel != nil {
+	if pin.softwarePWMWorkers != nil {
 		// We already have a software PWM loop running. It will pick up the changes on its own.
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(pin.cancelCtx)
-	pin.swPwmCancel = cancel
-	pin.boardWorkers.Add(1)
-	utils.ManagedGo(func() { pin.softwarePwmLoop(ctx) }, pin.boardWorkers.Done)
+	pin.softwarePWMWorkers = utils.NewBackgroundStoppableWorkers(pin.softwarePwmLoop)
 	return nil
 }
 
@@ -372,6 +362,14 @@ func (pin *gpioPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[strin
 }
 
 func (pin *gpioPin) Close() error {
+
+	// stop any software pwm running on the pin
+	// the software PWM loop locks the pin, so we need to stop the worker before locking the pin to close it
+	if pin.softwarePWMWorkers != nil {
+		pin.softwarePWMWorkers.Stop()
+		pin.softwarePWMWorkers = nil
+	}
+
 	// We keep the gpio.Line object open indefinitely, so it holds its state for as long as this
 	// struct is around. This function is a way to close it when we're about to go out of scope, so
 	// we don't leak file descriptors.

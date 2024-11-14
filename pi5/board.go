@@ -125,7 +125,7 @@ func newBoard(
 
 	// Initialize the GPIO pins
 	for newName, mapping := range gpioMappings {
-		b.gpios[newName] = pinctrl.CreateGpioPin(cancelCtx, mapping, &b.activeBackgroundWorkers, logger, &b.vPage)
+		b.gpios[newName] = pinctrl.CreateGpioPin(mapping, &b.vPage, logger)
 	}
 
 	if err := b.Reconfigure(ctx, nil, conf); err != nil {
