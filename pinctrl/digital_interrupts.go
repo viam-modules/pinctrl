@@ -15,11 +15,8 @@ import (
 	"go.viam.com/utils"
 )
 
-// DigitalInterrupt is the struct for managing a digital interrupt.
+// DigitalInterrupt is the struct for managing a digital interrupt that satisfies a board.DigitalInterrupt
 type DigitalInterrupt struct {
-	*digitalInterrupt
-}
-type digitalInterrupt struct {
 	workers  *utils.StoppableWorkers
 	line     *gpio.LineWithEvent
 	mu       sync.Mutex // Protects everything below here
@@ -48,7 +45,7 @@ func NewDigitalInterrupt(
 		return nil, err
 	}
 
-	di := digitalInterrupt{line: line, config: config}
+	di := DigitalInterrupt{line: line, config: config}
 	di.workers = utils.NewBackgroundStoppableWorkers(di.monitor)
 
 	if oldInterrupt != nil {
@@ -58,16 +55,16 @@ func NewDigitalInterrupt(
 		oldInterrupt.channels = []chan board.Tick{}
 	}
 
-	return &DigitalInterrupt{digitalInterrupt: &di}, nil
+	return &di, nil
 }
 
-func (di *digitalInterrupt) UpdateConfig(newConfig board.DigitalInterruptConfig) {
+func (di *DigitalInterrupt) UpdateConfig(newConfig board.DigitalInterruptConfig) {
 	di.mu.Lock()
 	defer di.mu.Unlock()
 	di.config = newConfig
 }
 
-func (di *digitalInterrupt) Close() error {
+func (di *DigitalInterrupt) Close() error {
 	di.workers.Stop()
 
 	// The background worker has now stopped, so cannot have locked the mutex. Anything else cannot
@@ -82,13 +79,13 @@ func (di *digitalInterrupt) Close() error {
 	return multierr.Combine(err, di.line.Close())
 }
 
-func (di *digitalInterrupt) Name() string {
+func (di *DigitalInterrupt) Name() string {
 	di.mu.Lock()
 	defer di.mu.Unlock()
 	return di.config.Name
 }
 
-func (di *digitalInterrupt) Value(
+func (di *DigitalInterrupt) Value(
 	ctx context.Context,
 	extra map[string]interface{},
 ) (int64, error) {
@@ -97,7 +94,7 @@ func (di *digitalInterrupt) Value(
 	return di.count, nil
 }
 
-func (di *digitalInterrupt) monitor(ctx context.Context) {
+func (di *DigitalInterrupt) monitor(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -135,14 +132,14 @@ func (di *digitalInterrupt) monitor(ctx context.Context) {
 }
 
 // AddChannel adds a board.Tick channel to stream ticks to.
-func (di *digitalInterrupt) AddChannel(ch chan board.Tick) {
+func (di *DigitalInterrupt) AddChannel(ch chan board.Tick) {
 	di.mu.Lock()
 	defer di.mu.Unlock()
 	di.channels = append(di.channels, ch)
 }
 
 // RemoveChannel removes a previously-added channel to stream ticks to.
-func (di *digitalInterrupt) RemoveChannel(ch chan board.Tick) {
+func (di *DigitalInterrupt) RemoveChannel(ch chan board.Tick) {
 	di.mu.Lock()
 	defer di.mu.Unlock()
 	for i, oldCh := range di.channels {
@@ -161,13 +158,13 @@ func (di *digitalInterrupt) RemoveChannel(ch chan board.Tick) {
 // You can also get the current value from a digitalInterrupt pin. To do this, we provide the
 // entire board.GPIOPin interface.
 
-func (di *digitalInterrupt) Set(
+func (di *DigitalInterrupt) Set(
 	ctx context.Context, isHigh bool, extra map[string]interface{},
 ) error {
 	return errors.New("cannot set value of a digital interrupt pin")
 }
 
-func (di *digitalInterrupt) Get(ctx context.Context, extra map[string]interface{}) (bool, error) {
+func (di *DigitalInterrupt) Get(ctx context.Context, extra map[string]interface{}) (bool, error) {
 	value, err := di.line.Value()
 	if err != nil {
 		return false, err
@@ -177,23 +174,23 @@ func (di *digitalInterrupt) Get(ctx context.Context, extra map[string]interface{
 	return (value != 0), nil
 }
 
-func (di *digitalInterrupt) PWM(ctx context.Context, extra map[string]interface{}) (float64, error) {
+func (di *DigitalInterrupt) PWM(ctx context.Context, extra map[string]interface{}) (float64, error) {
 	return 0, errors.New("cannot get PWM of a digital interrupt pin")
 }
 
-func (di *digitalInterrupt) SetPWM(
+func (di *DigitalInterrupt) SetPWM(
 	ctx context.Context, dutyCyclePct float64, extra map[string]interface{},
 ) error {
 	return errors.New("cannot set PWM of a digital interrupt pin")
 }
 
-func (di *digitalInterrupt) PWMFreq(
+func (di *DigitalInterrupt) PWMFreq(
 	ctx context.Context, extra map[string]interface{},
 ) (uint, error) {
 	return 0, errors.New("cannot get PWM freq of a digital interrupt pin")
 }
 
-func (di *digitalInterrupt) SetPWMFreq(
+func (di *DigitalInterrupt) SetPWMFreq(
 	ctx context.Context, freqHz uint, extra map[string]interface{},
 ) error {
 	return errors.New("cannot set PWM freq of a digital interrupt pin")
