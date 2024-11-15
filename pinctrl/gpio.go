@@ -158,7 +158,7 @@ func (pin *GPIOPin) setInternal(isHigh bool) (err error) {
 	}
 
 	if err := pin.line.SetValue(value); err != nil {
-		pin.wrapError(err)
+		return pin.wrapError(err)
 	}
 	return nil
 }
