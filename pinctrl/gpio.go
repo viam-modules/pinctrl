@@ -51,6 +51,8 @@ func CreateGpioPin(mapping gl.GPIOBoardMapping, gpioPinsPage *mmap.MMap, logger 
 	return &pin
 }
 
+// wrapError wraps information about the pin in an error.
+// If the error passed in is nil, this will still return an error.
 func (pin *GPIOPin) wrapError(err error) error {
 	return errors.Join(err, fmt.Errorf("from GPIO device %s line %d", pin.devicePath, pin.offset))
 }
@@ -143,12 +145,10 @@ func (pin *GPIOPin) setInternal(isHigh bool) (err error) {
 	} else {
 		value = 0
 	}
-	pin.logger.Info("yo openGpioFd")
 
 	if err := pin.openGpioFd( /* isInput= */ false); err != nil {
 		return err
 	}
-	pin.logger.Info("yo is gpio?")
 	if pin.offset == noPin {
 		if isHigh {
 			return errors.New("cannot set non-GPIO pin high")
@@ -157,8 +157,10 @@ func (pin *GPIOPin) setInternal(isHigh bool) (err error) {
 		return nil
 	}
 
-	pin.logger.Info("yo setValue")
-	return pin.wrapError(pin.line.SetValue(value))
+	if err := pin.line.SetValue(value); err != nil {
+		pin.wrapError(err)
+	}
+	return nil
 }
 
 // Get impments Get from the board.GPIOPin interface.
