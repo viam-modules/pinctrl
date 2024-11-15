@@ -183,8 +183,10 @@ func (pwm *pwmDevice) disable() error {
 
 // Only call this from public functions, to avoid double-wrapping the errors.
 func (pwm *pwmDevice) wrapError(err error) error {
-	// Note that if err is nil, errors.Join() will return nil, too.
-	return errors.Join(err, fmt.Errorf("HW PWM chipPath %s, line %d", pwm.chipPath, pwm.line))
+	if err != nil {
+		return errors.Join(err, fmt.Errorf("HW PWM chipPath %s, line %d", pwm.chipPath, pwm.line))
+	}
+	return nil
 }
 
 // updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
