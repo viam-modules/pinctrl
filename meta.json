@@ -1,0 +1,18 @@
+{
+    "module_id": "very-real:pinctrl",
+    "visibility": "private",
+    "url": "https://github.com/viam-modules/pinctrl",
+    "description": "Viam Go module for raspberry pi 5",
+    "models": [
+      {
+        "api": "rdk:component:board",
+        "model":"very-real:pinctrl:rpi5"
+      }
+    ],
+    "build": {
+      "build": "make setup module",
+      "path": "bin/raspberry-pi-module.tar.gz",
+      "arch" : ["linux/arm64"]
+    },
+    "entrypoint": "bin/pinctrl"
+}

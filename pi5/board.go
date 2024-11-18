@@ -4,22 +4,22 @@ package pi5
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	mmap "github.com/edsrzf/mmap-go"
-	"github.com/pkg/errors"
+	"github.com/viam-modules/pinctrl/pinctrl"
 	"go.uber.org/multierr"
 	pb "go.viam.com/api/component/board/v1"
-	"go.viam.com/utils"
-
 	"go.viam.com/rdk/components/board"
 	gl "go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/grpc"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
+	"go.viam.com/utils"
 )
 
 // Model for rpi5.
@@ -110,8 +110,8 @@ func newBoard(
 		cancelCtx:    cancelCtx,
 		cancelFunc:   cancelFunc,
 
-		gpios:      map[string]*gpioPin{},
-		interrupts: map[string]*digitalInterrupt{},
+		gpios:      map[string]*pinctrl.GPIOPin{},
+		interrupts: map[string]*pinctrl.DigitalInterrupt{},
 
 		chipSize: 0x30000,
 		pulls:    map[int]byte{},
@@ -125,7 +125,7 @@ func newBoard(
 
 	// Initialize the GPIO pins
 	for newName, mapping := range gpioMappings {
-		b.gpios[newName] = b.createGpioPin(mapping)
+		b.gpios[newName] = pinctrl.CreateGpioPin(mapping, &b.vPage, logger)
 	}
 
 	if err := b.Reconfigure(ctx, nil, conf); err != nil {
@@ -165,7 +165,7 @@ func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
 		case "down":
 			b.pulls[gpioNum] = pullDownMode
 		default:
-			return fmt.Errorf("unexpected pull")
+			return errors.New("unexpected pull")
 		}
 
 		b.setPulls()
@@ -190,20 +190,6 @@ func (b *pinctrlpi5) setPulls() {
 	}
 }
 
-func (b *pinctrlpi5) createGpioPin(mapping gl.GPIOBoardMapping) *gpioPin {
-	pin := gpioPin{
-		boardWorkers: &b.activeBackgroundWorkers,
-		devicePath:   mapping.GPIOChipDev,
-		offset:       uint32(mapping.GPIO),
-		cancelCtx:    b.cancelCtx,
-		logger:       b.logger,
-	}
-	if mapping.HWPWMSupported {
-		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, b.logger, &b.vPage)
-	}
-	return &pin
-}
-
 type pinctrlpi5 struct {
 	resource.Named
 	mu sync.Mutex
@@ -211,8 +197,8 @@ type pinctrlpi5 struct {
 	gpioMappings map[string]gl.GPIOBoardMapping
 	logger       logging.Logger
 
-	gpios      map[string]*gpioPin
-	interrupts map[string]*digitalInterrupt
+	gpios      map[string]*pinctrl.GPIOPin
+	interrupts map[string]*pinctrl.DigitalInterrupt
 
 	virtAddr *byte     // base address of mapped virtual page referencing the gpio chip data
 	physAddr uint64    // base address of the gpio chip data in /dev/mem/
@@ -260,7 +246,7 @@ func (b *pinctrlpi5) DigitalInterruptByName(name string) (board.DigitalInterrupt
 		Name: name,
 		Pin:  name,
 	}
-	interrupt, err := newDigitalInterrupt(defaultInterruptConfig, mapping, nil)
+	interrupt, err := pinctrl.NewDigitalInterrupt(defaultInterruptConfig, mapping, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +285,7 @@ func (b *pinctrlpi5) GPIOPinByName(pinName string) (board.GPIOPin, error) {
 		return interrupt, nil
 	}
 
-	return nil, errors.Errorf("cannot find GPIO for unknown pin: %s", pinName)
+	return nil, fmt.Errorf("cannot find GPIO for unknown pin: %s", pinName)
 }
 
 // SetPowerMode sets the board to the given power mode. If provided,
@@ -317,9 +303,9 @@ func (b *pinctrlpi5) SetPowerMode(
 func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.DigitalInterrupt, ch chan board.Tick,
 	extra map[string]interface{},
 ) error {
-	var rawInterrupts []*digitalInterrupt
+	var rawInterrupts []*pinctrl.DigitalInterrupt
 	for _, i := range interrupts {
-		raw, ok := i.(*digitalInterrupt)
+		raw, ok := i.(*pinctrl.DigitalInterrupt)
 		if !ok {
 			return errors.New("cannot stream ticks to an interrupt not associated with this board")
 		}

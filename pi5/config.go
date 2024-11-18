@@ -2,7 +2,7 @@
 package pi5
 
 import (
-	"fmt"
+	"errors"
 
 	"go.viam.com/rdk/resource"
 )
@@ -28,7 +28,7 @@ func (cfg *Config) Validate(path string) ([]string, error) {
 			return []string{}, resource.NewConfigValidationFieldRequiredError(path, "pull")
 		}
 		if !(c.Pull == "up" || c.Pull == "down" || c.Pull == "none") {
-			return []string{}, fmt.Errorf("supported pull config attributes are up, down, and none")
+			return []string{}, errors.New("supported pull config attributes are up, down, and none")
 		}
 	}
 	return []string{}, nil

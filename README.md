@@ -7,7 +7,7 @@ Currently, the raspberry pi 5 is supported.
 
 
 ### Models
-`viam-labs:pinctrl:rpi5`
+`very-real:pinctrl:rpi5`
 
 
 ### Attributes
@@ -27,7 +27,7 @@ The following attributes are avaliable for pulls:
 ```json
   {
       "name": "pinctrl-pi5",
-      "model": "viam-labs:pinctrl:rpi5",
+      "model": "very-real:pinctrl:rpi5",
       "type": "board",
       "namespace": "rdk",
       "attributes": {
@@ -38,7 +38,7 @@ The following attributes are avaliable for pulls:
             "pull": "up"
           },
             {
-            "pin": "9",
+            "pin": "10",
             "pull": "down"
           },
           {

@@ -1,24 +1,27 @@
 //go:build linux
 
-package pi5
+package pinctrl
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
+	mmap "github.com/edsrzf/mmap-go"
 	"github.com/mkch/gpio"
-	"github.com/pkg/errors"
-	"go.viam.com/utils"
-
 	"go.viam.com/rdk/components/board"
+	gl "go.viam.com/rdk/components/board/genericlinux"
 	"go.viam.com/rdk/logging"
+	"go.viam.com/utils"
 )
 
 const noPin = 0xFFFFFFFF // noPin is the uint32 version of -1. A pin with this offset has no GPIO
 
-type gpioPin struct {
-	boardWorkers *sync.WaitGroup
+// GPIOPin is the struct defining a GPIOPin that satisfies a board.GPIOPin.
+type GPIOPin struct {
+	softwarePWMWorkers *utils.StoppableWorkers
 
 	// These values should both be considered immutable.
 	devicePath string
@@ -31,20 +34,32 @@ type gpioPin struct {
 	pwmFreqHz       uint
 	pwmDutyCyclePct float64
 
-	mu        sync.Mutex
-	cancelCtx context.Context
-	logger    logging.Logger
-
-	swPwmCancel func()
+	mu     sync.Mutex
+	logger logging.Logger
 }
 
-func (pin *gpioPin) wrapError(err error) error {
-	return errors.Wrapf(err, "from GPIO device %s line %d", pin.devicePath, pin.offset)
+// CreateGpioPin creates a gpio pin.
+func CreateGpioPin(mapping gl.GPIOBoardMapping, gpioPinsPage *mmap.MMap, logger logging.Logger) *GPIOPin {
+	pin := GPIOPin{
+		devicePath: mapping.GPIOChipDev,
+		offset:     uint32(mapping.GPIO),
+		logger:     logger,
+	}
+	if mapping.HWPWMSupported {
+		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, logger, gpioPinsPage)
+	}
+	return &pin
+}
+
+// wrapError wraps information about the pin in an error.
+// If the error passed in is nil, this will still return an error.
+func (pin *GPIOPin) wrapError(err error) error {
+	return errors.Join(err, fmt.Errorf("from GPIO device %s line %d", pin.devicePath, pin.offset))
 }
 
 // This is a private helper function that should only be called when the mutex is locked. It sets
 // pin.line to a valid struct or returns an error.
-func (pin *gpioPin) openGpioFd(isInput bool) error {
+func (pin *GPIOPin) openGpioFd(isInput bool) error {
 	if isInput != pin.isInput {
 		// We're switching from an input pin to an output one or vice versa. Close the line and
 		// repoen in the other mode.
@@ -94,7 +109,7 @@ func (pin *gpioPin) openGpioFd(isInput bool) error {
 	return nil
 }
 
-func (pin *gpioPin) closeGpioFd() error {
+func (pin *GPIOPin) closeGpioFd() error {
 	if pin.line == nil {
 		return nil // The pin is already closed.
 	}
@@ -105,17 +120,17 @@ func (pin *gpioPin) closeGpioFd() error {
 	return nil
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
-func (pin *gpioPin) Set(ctx context.Context, isHigh bool,
+// Set implements Set from the board.GPIOPin interface.
+func (pin *GPIOPin) Set(ctx context.Context, isHigh bool,
 	extra map[string]interface{},
 ) (err error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
 	// Shut down any software PWM loop that might be running.
-	if pin.swPwmCancel != nil {
-		pin.swPwmCancel()
-		pin.swPwmCancel = nil
+	if pin.softwarePWMWorkers != nil {
+		pin.softwarePWMWorkers.Stop()
+		pin.softwarePWMWorkers = nil
 	}
 
 	return pin.setInternal(isHigh)
@@ -123,7 +138,7 @@ func (pin *gpioPin) Set(ctx context.Context, isHigh bool,
 
 // This function assumes you've already locked the mutex. It sets the value of a pin without
 // changing whether the pin is part of a software PWM loop.
-func (pin *gpioPin) setInternal(isHigh bool) (err error) {
+func (pin *GPIOPin) setInternal(isHigh bool) (err error) {
 	var value byte
 	if isHigh {
 		value = 1
@@ -134,7 +149,6 @@ func (pin *gpioPin) setInternal(isHigh bool) (err error) {
 	if err := pin.openGpioFd( /* isInput= */ false); err != nil {
 		return err
 	}
-
 	if pin.offset == noPin {
 		if isHigh {
 			return errors.New("cannot set non-GPIO pin high")
@@ -143,11 +157,14 @@ func (pin *gpioPin) setInternal(isHigh bool) (err error) {
 		return nil
 	}
 
-	return pin.wrapError(pin.line.SetValue(value))
+	if err := pin.line.SetValue(value); err != nil {
+		return pin.wrapError(err)
+	}
+	return nil
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
-func (pin *gpioPin) Get(
+// Get impments Get from the board.GPIOPin interface.
+func (pin *GPIOPin) Get(
 	ctx context.Context, extra map[string]interface{},
 ) (result bool, err error) {
 	pin.mu.Lock()
@@ -172,16 +189,17 @@ func (pin *gpioPin) Get(
 
 // Lock the mutex before calling this! We'll spin up a background goroutine to create a PWM signal
 // in software, if we're supposed to and one isn't already running.
-func (pin *gpioPin) startSoftwarePWM() error {
+func (pin *GPIOPin) startSoftwarePWM() error {
 	if pin.pwmDutyCyclePct == 0 || pin.pwmFreqHz == 0 {
 		// We don't have both parameters set up. Stop any PWM loop we might have started previously.
-		if pin.swPwmCancel != nil {
-			pin.swPwmCancel()
-			pin.swPwmCancel = nil
+		if pin.softwarePWMWorkers != nil {
+			pin.softwarePWMWorkers.Stop()
+			pin.softwarePWMWorkers = nil
 		}
 		if pin.hwPwm != nil {
 			return pin.hwPwm.Close()
 		}
+		pin.logger.Warn("yo screw your pwm")
 		// If we used to have a software PWM loop, we might have stopped the loop while the pin was
 		// on. Remember to turn it off!
 		return pin.setInternal(false)
@@ -189,14 +207,15 @@ func (pin *gpioPin) startSoftwarePWM() error {
 
 	// Otherwise, we need to output a PWM signal.
 	if pin.hwPwm != nil {
+		pin.logger.Warn("yo hardware")
 		if pin.pwmFreqHz > 1 {
 			if err := pin.closeGpioFd(); err != nil {
 				return err
 			}
 			// Shut down any software PWM loop that might be running.
-			if pin.swPwmCancel != nil {
-				pin.swPwmCancel()
-				pin.swPwmCancel = nil
+			if pin.softwarePWMWorkers != nil {
+				pin.softwarePWMWorkers.Stop()
+				pin.softwarePWMWorkers = nil
 			}
 			return pin.hwPwm.SetPwm(pin.pwmFreqHz, pin.pwmDutyCyclePct)
 		}
@@ -207,19 +226,16 @@ func (pin *gpioPin) startSoftwarePWM() error {
 			return err
 		}
 	}
-
+	pin.logger.Warn("yo software")
 	// If we get here, we need a software loop to drive the PWM signal, either because this pin
 	// doesn't have hardware support or because we want to drive it at such a low frequency that
 	// the hardware chip can't do it.
-	if pin.swPwmCancel != nil {
+	if pin.softwarePWMWorkers != nil {
 		// We already have a software PWM loop running. It will pick up the changes on its own.
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(pin.cancelCtx)
-	pin.swPwmCancel = cancel
-	pin.boardWorkers.Add(1)
-	utils.ManagedGo(func() { pin.softwarePwmLoop(ctx) }, pin.boardWorkers.Done)
+	pin.softwarePWMWorkers = utils.NewBackgroundStoppableWorkers(pin.softwarePwmLoop)
 	return nil
 }
 
@@ -256,7 +272,7 @@ func accurateSleep(ctx context.Context, duration time.Duration) bool {
 
 // We turn the pin either on or off, and then wait until it's time to turn it off or on again (or
 // until we're supposed to shut down). We return whether we should continue the software PWM cycle.
-func (pin *gpioPin) halfPwmCycle(ctx context.Context, shouldBeOn bool) bool {
+func (pin *GPIOPin) halfPwmCycle(ctx context.Context, shouldBeOn bool) bool {
 	// Make local copies of these, then release the mutex
 	var dutyCycle float64
 	var freqHz uint
@@ -293,7 +309,7 @@ func (pin *gpioPin) halfPwmCycle(ctx context.Context, shouldBeOn bool) bool {
 	return accurateSleep(ctx, duration)
 }
 
-func (pin *gpioPin) softwarePwmLoop(ctx context.Context) {
+func (pin *GPIOPin) softwarePwmLoop(ctx context.Context) {
 	for {
 		if !pin.halfPwmCycle(ctx, true) {
 			return
@@ -304,16 +320,16 @@ func (pin *gpioPin) softwarePwmLoop(ctx context.Context) {
 	}
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
-func (pin *gpioPin) PWM(ctx context.Context, extra map[string]interface{}) (float64, error) {
+// PWM implements PWM from the board.GPIOPin interface.
+func (pin *GPIOPin) PWM(ctx context.Context, extra map[string]interface{}) (float64, error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
 	return pin.pwmDutyCyclePct, nil
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
-func (pin *gpioPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[string]interface{}) error {
+// SetPWM implements SetPWM the board.GPIOPin interface.
+func (pin *GPIOPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[string]interface{}) error {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
@@ -326,16 +342,16 @@ func (pin *gpioPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[
 	return pin.startSoftwarePWM()
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
-func (pin *gpioPin) PWMFreq(ctx context.Context, extra map[string]interface{}) (uint, error) {
+// PWMFreq implements PWMFreq from the board.GPIOPin interface.
+func (pin *GPIOPin) PWMFreq(ctx context.Context, extra map[string]interface{}) (uint, error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
 	return pin.pwmFreqHz, nil
 }
 
-// This helps implement the board.GPIOPin interface for gpioPin.
-func (pin *gpioPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[string]interface{}) error {
+// SetPWMFreq implements SetPWMFreq the board.GPIOPin interface.
+func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[string]interface{}) error {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
@@ -347,7 +363,15 @@ func (pin *gpioPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[strin
 	return pin.startSoftwarePWM()
 }
 
-func (pin *gpioPin) Close() error {
+// Close closes the GPIOPin and any pwm related features on the pin.
+func (pin *GPIOPin) Close() error {
+	// stop any software pwm running on the pin
+	// the software PWM loop locks the pin, so we need to stop the worker before locking the pin to close it
+	if pin.softwarePWMWorkers != nil {
+		pin.softwarePWMWorkers.Stop()
+		pin.softwarePWMWorkers = nil
+	}
+
 	// We keep the gpio.Line object open indefinitely, so it holds its state for as long as this
 	// struct is around. This function is a way to close it when we're about to go out of scope, so
 	// we don't leak file descriptors.

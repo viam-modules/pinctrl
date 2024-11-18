@@ -1,4 +1,4 @@
 *.local
-pinctrl
 maria@raspberrypi
 bin/
+.DS_Store
