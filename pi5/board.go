@@ -6,12 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
-	mmap "github.com/edsrzf/mmap-go"
-	"github.com/viam-modules/pinctrl/pinctrl"
 	"go.uber.org/multierr"
 	pb "go.viam.com/api/component/board/v1"
 	"go.viam.com/rdk/components/board"
@@ -20,6 +17,8 @@ import (
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 	"go.viam.com/utils"
+
+	"github.com/viam-modules/pinctrl/pinctrl"
 )
 
 // Model for rpi5.
@@ -100,6 +99,7 @@ func newBoard(
 	logger logging.Logger,
 	testingMode bool,
 ) (board.Board, error) {
+	var err error
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
 	b := &pinctrlpi5{
@@ -113,19 +113,24 @@ func newBoard(
 		gpios:      map[string]*pinctrl.GPIOPin{},
 		interrupts: map[string]*pinctrl.DigitalInterrupt{},
 
-		chipSize: 0x30000,
-		pulls:    map[int]byte{},
+		pulls: map[int]byte{},
+	}
+
+	pinctrlCfg := pinctrl.Config{GPIOName: "gpio0", GPIOMemPath: "/dev/gpiomem0", DTBase: "/proc/device-tree", ChipSize: 0x30000}
+	if testingMode {
+		pinctrlCfg.TestPath = "./mock-device-tree"
 	}
 
 	// Note that this must be called before configuring the pull up/down configuration uses the
 	// memory mapped in this function.
-	if err := b.setupPinControl(testingMode); err != nil {
+	b.boardPinCtrl, err = pinctrl.SetupPinControl(pinctrlCfg, logger)
+	if err != nil {
 		return nil, err
 	}
 
 	// Initialize the GPIO pins
 	for newName, mapping := range gpioMappings {
-		b.gpios[newName] = pinctrl.CreateGpioPin(mapping, &b.vPage, logger)
+		b.gpios[newName] = b.boardPinCtrl.CreateGpioPin(mapping)
 	}
 
 	if err := b.Reconfigure(ctx, nil, conf); err != nil {
@@ -186,7 +191,7 @@ func (b *pinctrlpi5) setPulls() {
 
 		// only the 5th and 6th bits of the register are used to set pull up/down
 		// reset the register then set the mode
-		b.vPage[PadsBank0Offset+pinOffsetBytes] = (b.vPage[PadsBank0Offset+pinOffsetBytes] & 0xf3) | mode
+		b.boardPinCtrl.VPage[PadsBank0Offset+pinOffsetBytes] = (b.boardPinCtrl.VPage[PadsBank0Offset+pinOffsetBytes] & 0xf3) | mode
 	}
 }
 
@@ -200,11 +205,7 @@ type pinctrlpi5 struct {
 	gpios      map[string]*pinctrl.GPIOPin
 	interrupts map[string]*pinctrl.DigitalInterrupt
 
-	virtAddr *byte     // base address of mapped virtual page referencing the gpio chip data
-	physAddr uint64    // base address of the gpio chip data in /dev/mem/
-	chipSize uint64    // length of chip's address space in memory
-	memFile  *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
-	vPage    mmap.MMap // virtual page pointing to dev/gpiomem's physical page in memory. Need to keep track of this for cleanup
+	boardPinCtrl pinctrl.Pinctrl
 
 	cancelCtx               context.Context
 	cancelFunc              func()
@@ -246,7 +247,7 @@ func (b *pinctrlpi5) DigitalInterruptByName(name string) (board.DigitalInterrupt
 		Name: name,
 		Pin:  name,
 	}
-	interrupt, err := pinctrl.NewDigitalInterrupt(defaultInterruptConfig, mapping, nil)
+	interrupt, err := b.boardPinCtrl.NewDigitalInterrupt(defaultInterruptConfig, mapping, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +335,7 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 // Close attempts to cleanly close each part of the board.
 func (b *pinctrlpi5) Close(ctx context.Context) error {
 	b.mu.Lock()
-	err := b.cleanupPinControl()
+	err := b.boardPinCtrl.Close()
 	if err != nil {
 		return fmt.Errorf("trouble cleaning up pincontrol memory: %w", err)
 	}

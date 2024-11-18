@@ -1,6 +1,6 @@
 //go:build linux
 
-package pi5
+package pinctrl
 
 import (
 	"encoding/binary"
@@ -13,16 +13,15 @@ import (
 	"strings"
 
 	mmap "github.com/edsrzf/mmap-go"
+	"go.viam.com/rdk/logging"
 )
 
-const (
-	gpioName    = "gpio0"
-	gpioMemPath = "/dev/gpiomem0"
-	testFolder  = "./mock-device-tree"
-	dtBase      = "/proc/device-tree"
-)
-
-var dtBaseNodePath string
+// const (
+// 	gpioName    = "gpio0"
+// 	gpioMemPath = "/dev/gpiomem0"
+// 	testFolder  = "./mock-device-tree"
+// 	dtBase      = "/proc/device-tree"
+// )
 
 /*
 rangeInfo represents the info provided in the ranges property of a device tree.
@@ -43,6 +42,32 @@ type rangeInfo struct {
 	addrSpaceSize uint64
 }
 
+// Config is the config used to define the names for pinctrl on a board. These are needed to use pinctrl with a device.
+type Config struct {
+	GPIOName    string
+	GPIOMemPath string
+	DTBase      string
+	TestPath    string // path to a mock device tree to use in tests
+	ChipSize    uint64 // length of chip's address space in memory
+}
+
+func (cfg *Config) getBaseNodePath() string {
+	if cfg.TestPath != "" {
+		return cfg.TestPath + cfg.DTBase
+	}
+	return cfg.DTBase
+}
+
+// Pinctrl defines the objects used when using pinctrl to control a board/device.
+type Pinctrl struct {
+	VirtAddr *byte     // base address of mapped virtual page referencing the gpio chip data
+	PhysAddr uint64    // base address of the gpio chip data in /dev/mem/
+	MemFile  *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
+	VPage    mmap.MMap // virtual page pointing to dev/gpiomem's physical page in memory. Need to keep track of this for cleanup
+	Cfg      Config
+	logger   logging.Logger
+}
+
 // Cleans file path before opening files in device tree.
 func cleanFilePath(nodePath string) string {
 	nodePath = strings.TrimSpace(nodePath)
@@ -53,7 +78,7 @@ func cleanFilePath(nodePath string) string {
 }
 
 // We look in the 'aliases' node at the base of proc/device-tree to determine the full file path required to access our GPIO Chip.
-func (b *pinctrlpi5) findPathFromAlias(nodeName string) (string, error) {
+func findPathFromAlias(nodeName, dtBaseNodePath string) (string, error) {
 	dtNodePath := dtBaseNodePath + "/aliases/" + nodeName
 	//nolint:gosec
 	nodePathBytes, err := os.ReadFile(dtNodePath)
@@ -186,7 +211,7 @@ func getRangesAddr(childNodePath string, numCAddrCells, numPAddrCells, numAddrSp
 }
 
 // Recursively traverses device tree to calcuate physical address of specified GPIO chip.
-func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddrCells uint32) (uint64, error) {
+func setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath string, physAddress uint64, numCAddrCells uint32) (uint64, error) {
 	invalidAddr := uint64(math.NaN())
 
 	// Base Case: We are at the root of the device tree.
@@ -232,12 +257,12 @@ func setGPIONodePhysAddrHelper(currNodePath string, physAddress uint64, numCAddr
 
 	numCAddrCells = numPAddrCells
 	currNodePath = parentNodePath
-	return setGPIONodePhysAddrHelper(currNodePath, physAddress, numCAddrCells)
+	return setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath, physAddress, numCAddrCells)
 }
 
 // Uses information stored within the 'reg' property of the child node
 // and 'ranges' property of its parents to map the child's physical address into the dev/gpiomem space.
-func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
+func setGPIONodePhysAddr(nodePath, dtBaseNodePath string) (uint64, error) {
 	var err error
 	currNodePath := dtBaseNodePath + nodePath // initially: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
 	invalidAddr := uint64(math.NaN())
@@ -246,16 +271,16 @@ func (b *pinctrlpi5) setGPIONodePhysAddr(nodePath string) error {
 	/* Call recursive function to calculate phys addr. Works way up the device tree, using the information
 	found in #ranges at every node to translate from the child's address space to the parent's address space
 	until we get the child's physical address in all of /dev/gpiomem. */
-	b.physAddr, err = setGPIONodePhysAddrHelper(currNodePath, invalidAddr, numCAddrCells)
+	physAddr, err := setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath, invalidAddr, numCAddrCells)
 	if err != nil {
-		return fmt.Errorf("trouble calculating phys addr for %s: %w", nodePath, err)
+		return 0, fmt.Errorf("trouble calculating phys addr for %s: %w", nodePath, err)
 	}
 
-	return nil
+	return physAddr, nil
 }
 
 // Creates a virtual page to access/manipulate memory related to gpiochip data.
-func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
+func createGPIOVPage(memPath string, chipSize uint64) (*os.File, mmap.MMap, *byte, error) {
 	var err error
 
 	/*
@@ -267,9 +292,9 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	fileFlags := os.O_RDWR | os.O_SYNC
 	// 0666 is an octal representation of: file is readable / writeable by anyone
 	//nolint:gosec
-	b.memFile, err = os.OpenFile(gpioMemPath, fileFlags, 0o666)
+	memFile, err := os.OpenFile(memPath, fileFlags, 0o666)
 	if err != nil {
-		return fmt.Errorf("failed to open %s: %w", memPath, err)
+		return nil, nil, nil, fmt.Errorf("failed to open %s: %w", memPath, err)
 	}
 
 	/*
@@ -298,63 +323,65 @@ func (b *pinctrlpi5) createGPIOVPage(memPath string) error {
 	*/
 
 	// 0 flag = shared, 0 offset because we are starting from the beginning of the mem/gpiomem0 file. offs = pageStart if we opened /dev/mem
-	b.vPage, err = mmap.MapRegion(b.memFile, int(b.chipSize), mmap.RDWR, 0, 0)
+	vPage, err := mmap.MapRegion(memFile, int(chipSize), mmap.RDWR, 0, 0)
 	if err != nil {
-		return fmt.Errorf("failed to mmap: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to mmap: %w", err)
 	}
 
-	b.virtAddr = &b.vPage[0]
-	return err
+	virtAddr := &vPage[0]
+	return memFile, vPage, virtAddr, nil
 }
 
-// Sets up GPIO pin memory access by parsing the device tree for relevant address information.
-func (b *pinctrlpi5) setupPinControl(testingMode bool) error {
+// SetupPinControl sets up GPIO pin memory access by parsing the device tree for relevant address information.
+// Implementers will need to contsruct a PinctrlConfig to use this.
+func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	// TODO: "gpio0" is hardcoded as the gpioName.
 	// This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
 
 	// If we are running tests, we need to read files/folders from our module's local sample device tree.
 	// This is located at raspi5-pinctrl/pi5/mock-device-tree
-	if testingMode {
-		dtBaseNodePath = testFolder + dtBase
-	} else {
-		dtBaseNodePath = dtBase
+	testingMode := cfg.TestPath != ""
+	dtBaseNodePath := cfg.getBaseNodePath()
+
+	nodePath, err := findPathFromAlias(cfg.GPIOName, dtBaseNodePath)
+	if err != nil {
+		logger.Errorf("error getting raspi5 GPIO nodePath")
+		return Pinctrl{}, err
 	}
 
-	nodePath, err := b.findPathFromAlias(gpioName)
+	physAddr, err := setGPIONodePhysAddr(nodePath, dtBaseNodePath)
 	if err != nil {
-		b.logger.Errorf("error getting raspi5 GPIO nodePath")
-		return err
-	}
-
-	err = b.setGPIONodePhysAddr(nodePath)
-	if err != nil {
-		b.logger.Errorf("error getting raspi5 GPIO physical address")
-		return err
+		logger.Errorf("error getting raspi5 GPIO physical address")
+		return Pinctrl{}, err
 	}
 
 	// In our current pinctrl_test.go we do not have any fake or real board
 	// to run tests with. We exit since we cannot actually access memory,
 	// which means we can't create a virtual page either.
 	if testingMode {
-		return nil
+		return Pinctrl{PhysAddr: physAddr, Cfg: cfg}, nil
 	}
 
-	err = b.createGPIOVPage(gpioMemPath)
+	memFile, vPage, virtAddr, err := createGPIOVPage(cfg.GPIOMemPath, cfg.ChipSize)
 	if err != nil {
-		b.logger.Errorf("error creating virtual page from GPIO physical address")
-		return err
+		logger.Errorf("error creating virtual page from GPIO physical address")
+		return Pinctrl{}, err
 	}
-	return nil
+
+	return Pinctrl{MemFile: memFile, VPage: vPage, VirtAddr: virtAddr, PhysAddr: physAddr, Cfg: cfg, logger: logger}, nil
 }
 
-// Cleans up mapped memory / files related to pin control upon board close() call.
-func (b *pinctrlpi5) cleanupPinControl() error {
-	if err := b.vPage.Unmap(); err != nil {
-		return fmt.Errorf("error during unmap: %w", err)
+// Close cleans up mapped memory / files related to pin control upon board close() call.
+func (ctrl *Pinctrl) Close() error {
+	if ctrl.VPage != nil {
+		if err := ctrl.VPage.Unmap(); err != nil {
+			return fmt.Errorf("error during unmap: %w", err)
+		}
 	}
-
-	if err := b.memFile.Close(); err != nil {
-		return fmt.Errorf("error during memFile closing: %w", err)
+	if ctrl.MemFile != nil {
+		if err := ctrl.MemFile.Close(); err != nil {
+			return fmt.Errorf("error during memFile closing: %w", err)
+		}
 	}
 
 	return nil
