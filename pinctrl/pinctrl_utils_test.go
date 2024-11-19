@@ -14,19 +14,34 @@ func TestFindPathFromAlias(t *testing.T) {
 	logger := logging.NewTestLogger(t)
 
 	pinctrlCfg := Config{
-		GPIOName: "gpio0", GPIOMemPath: "/dev/gpiomem0",
+		GPIOName: "gpio0", GPIOMemPath: "/dev/gpiomem0", UseAlias: true,
 		DTBase: "/proc/device-tree", ChipSize: 0x30000, TestPath: "./mock-device-tree",
 	}
 
 	boardPinCtrl, err := SetupPinControl(pinctrlCfg, logger)
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, boardPinCtrl, test.ShouldNotBeNil)
-	defer boardPinCtrl.Close()
 
 	path := "/axi/pcie@120000/rp1/gpio@d0000"
 	alias, err := findPathFromAlias("gpio0", pinctrlCfg.getBaseNodePath())
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, cleanFilePath(alias), test.ShouldEqual, cleanFilePath(path))
+	test.That(t, boardPinCtrl.Close(), test.ShouldBeNil)
+
+}
+
+func TestSetupNoAlias(t *testing.T) {
+	logger := logging.NewTestLogger(t)
+
+	pinctrlCfg := Config{
+		GPIOName: "/axi/pcie@120000/rp1/gpio@d0000", GPIOMemPath: "/dev/gpiomem0", UseAlias: false,
+		DTBase: "/proc/device-tree", ChipSize: 0x30000, TestPath: "./mock-device-tree",
+	}
+
+	boardPinCtrl, err := SetupPinControl(pinctrlCfg, logger)
+	test.That(t, err, test.ShouldBeNil)
+	test.That(t, boardPinCtrl, test.ShouldNotBeNil)
+	test.That(t, boardPinCtrl.Close(), test.ShouldBeNil)
 }
 
 func TestParseCells(t *testing.T) {
@@ -100,14 +115,4 @@ func TestGetRangesAddr(t *testing.T) {
 	test.That(t, ranges[1].childAddr, test.ShouldEqual, 0x400000000)
 	test.That(t, ranges[1].parentAddr, test.ShouldEqual, 0x1C00000000)
 	test.That(t, ranges[1].addrSpaceSize, test.ShouldEqual, 0x300000000)
-}
-
-func TestDeviceTreeParsing(t *testing.T) {
-	t.Run("test device tree parsing on mock tree", func(t *testing.T) {
-		TestFindPathFromAlias(t)
-		TestParseCells(t)
-		TestGetAddrSizeCells(t)
-		TestGetRegAddr(t)
-		TestGetRangesAddr(t)
-	})
 }

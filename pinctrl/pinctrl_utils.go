@@ -16,13 +16,6 @@ import (
 	"go.viam.com/rdk/logging"
 )
 
-// const (
-// 	gpioName    = "gpio0"
-// 	gpioMemPath = "/dev/gpiomem0"
-// 	testFolder  = "./mock-device-tree"
-// 	dtBase      = "/proc/device-tree"
-// )
-
 /*
 rangeInfo represents the info provided in the ranges property of a device tree.
 It provides a mapping between addresses in the child address space to the parent
@@ -44,11 +37,12 @@ type rangeInfo struct {
 
 // Config is the config used to define the names for pinctrl on a board. These are needed to use pinctrl with a device.
 type Config struct {
-	GPIOName    string
+	GPIOName    string // path to the gpio chip in the device tree
 	GPIOMemPath string
-	DTBase      string
+	DTBase      string // base path of the device tree e.g. /proc/device-tree
 	TestPath    string // path to a mock device tree to use in tests
 	ChipSize    uint64 // length of chip's address space in memory
+	UseAlias    bool   // if your board has an alias for the chip, you can use this instead
 }
 
 func (cfg *Config) getBaseNodePath() string {
@@ -335,7 +329,7 @@ func createGPIOVPage(memPath string, chipSize uint64) (*os.File, mmap.MMap, *byt
 // SetupPinControl sets up GPIO pin memory access by parsing the device tree for relevant address information.
 // Implementers will need to contsruct a PinctrlConfig to use this.
 func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
-	// TODO: "gpio0" is hardcoded as the gpioName.
+	var err error
 	// This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
 
 	// If we are running tests, we need to read files/folders from our module's local sample device tree.
@@ -343,10 +337,15 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	testingMode := cfg.TestPath != ""
 	dtBaseNodePath := cfg.getBaseNodePath()
 
-	nodePath, err := findPathFromAlias(cfg.GPIOName, dtBaseNodePath)
-	if err != nil {
-		logger.Errorf("error getting raspi5 GPIO nodePath")
-		return Pinctrl{}, err
+	nodePath := cfg.GPIOName
+	logger.Info("no alias path: ", nodePath)
+	if cfg.UseAlias {
+		nodePath, err = findPathFromAlias(cfg.GPIOName, dtBaseNodePath)
+		if err != nil {
+			logger.Errorf("error getting raspi5 GPIO nodePath")
+			return Pinctrl{}, err
+		}
+		logger.Info("nodepath: ", nodePath)
 	}
 
 	physAddr, err := setGPIONodePhysAddr(nodePath, dtBaseNodePath)
