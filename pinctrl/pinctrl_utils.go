@@ -37,12 +37,12 @@ type rangeInfo struct {
 
 // Config is the config used to define the names for pinctrl on a board. These are needed to use pinctrl with a device.
 type Config struct {
-	GPIOName    string // path to the gpio chip in the device tree
-	GPIOMemPath string
-	DTBase      string // base path of the device tree e.g. /proc/device-tree
-	TestPath    string // path to a mock device tree to use in tests
-	ChipSize    uint64 // length of chip's address space in memory
-	UseAlias    bool   // if your board has an alias for the chip, you can use this instead
+	GPIOChipPath string // path to the gpio chip in the device tree
+	GPIOMemPath  string
+	DTBase       string // base path of the device tree e.g. /proc/device-tree
+	TestPath     string // path to a mock device tree to use in tests
+	ChipSize     uint64 // length of chip's address space in memory
+	UseAlias     bool   // if your board has an alias for the chip, you can use this instead
 }
 
 func (cfg *Config) getBaseNodePath() string {
@@ -337,10 +337,10 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	testingMode := cfg.TestPath != ""
 	dtBaseNodePath := cfg.getBaseNodePath()
 
-	nodePath := cfg.GPIOName
+	nodePath := cfg.GPIOChipPath
 	logger.Info("no alias path: ", nodePath)
 	if cfg.UseAlias {
-		nodePath, err = findPathFromAlias(cfg.GPIOName, dtBaseNodePath)
+		nodePath, err = findPathFromAlias(cfg.GPIOChipPath, dtBaseNodePath)
 		if err != nil {
 			logger.Errorf("error getting raspi5 GPIO nodePath")
 			return Pinctrl{}, err

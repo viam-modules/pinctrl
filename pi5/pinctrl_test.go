@@ -47,10 +47,3 @@ func TestNewBoard(t *testing.T) {
 	test.That(t, p5.boardPinCtrl.Cfg.ChipSize, test.ShouldEqual, 0x30000)
 	test.That(t, p5.boardPinCtrl.PhysAddr, test.ShouldEqual, 0x1f000d0000)
 }
-
-func TestPi5Board(t *testing.T) {
-	t.Run("test board setup", func(t *testing.T) {
-		TestEmptyBoard(t)
-		TestNewBoard(t)
-	})
-}
