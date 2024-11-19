@@ -14,7 +14,7 @@ func TestFindPathFromAlias(t *testing.T) {
 	logger := logging.NewTestLogger(t)
 
 	pinctrlCfg := Config{
-		GPIOName: "gpio0", GPIOMemPath: "/dev/gpiomem0", UseAlias: true,
+		GPIOChipPath: "gpio0", GPIOMemPath: "/dev/gpiomem0", UseAlias: true,
 		DTBase: "/proc/device-tree", ChipSize: 0x30000, TestPath: "./mock-device-tree",
 	}
 
@@ -34,7 +34,7 @@ func TestSetupNoAlias(t *testing.T) {
 	logger := logging.NewTestLogger(t)
 
 	pinctrlCfg := Config{
-		GPIOName: "/axi/pcie@120000/rp1/gpio@d0000", GPIOMemPath: "/dev/gpiomem0", UseAlias: false,
+		GPIOChipPath: "/axi/pcie@120000/rp1/gpio@d0000", GPIOMemPath: "/dev/gpiomem0", UseAlias: false,
 		DTBase: "/proc/device-tree", ChipSize: 0x30000, TestPath: "./mock-device-tree",
 	}
 
