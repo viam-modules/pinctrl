@@ -117,8 +117,8 @@ func newBoard(
 	}
 
 	pinctrlCfg := pinctrl.Config{
-		GPIOChipPath: "gpio0", GPIOMemPath: "/dev/gpiomem0",
-		ChipSize: 0x30000, UseAlias: true,
+		GPIOChipPath: "gpio0", DevMemPath: "/dev/gpiomem0",
+		ChipSize: 0x30000, UseAlias: true, UseGPIOMem: true,
 	}
 	if testingMode {
 		pinctrlCfg.TestPath = "./mock-device-tree"

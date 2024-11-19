@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	mmap "github.com/edsrzf/mmap-go"
 	"go.viam.com/rdk/logging"
@@ -40,10 +41,11 @@ type rangeInfo struct {
 // Config is the config used to define the names for pinctrl on a board. These are needed to use pinctrl with a device.
 type Config struct {
 	GPIOChipPath string // path to the gpio chip in the device tree
-	GPIOMemPath  string
+	DevMemPath   string
 	TestPath     string // path to a mock device tree to use in tests
 	ChipSize     uint64 // length of chip's address space in memory
 	UseAlias     bool   // if your board has an alias for the chip, you can use this instead
+	UseGPIOMem   bool   // use this if your board supports /dev/gpiomem
 }
 
 func (cfg *Config) getBaseNodePath() string {
@@ -275,7 +277,7 @@ func setGPIONodePhysAddr(nodePath, dtBaseNodePath string) (uint64, error) {
 }
 
 // Creates a virtual page to access/manipulate memory related to gpiochip data.
-func createGPIOVPage(memPath string, chipSize uint64) (*os.File, mmap.MMap, *byte, error) {
+func createGPIOVPage(memPath string, chipSize, physAddr uint64, useGPIOMem bool) (Pinctrl, error) {
 	var err error
 
 	/*
@@ -289,7 +291,7 @@ func createGPIOVPage(memPath string, chipSize uint64) (*os.File, mmap.MMap, *byt
 	//nolint:gosec
 	memFile, err := os.OpenFile(memPath, fileFlags, 0o666)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to open %s: %w", memPath, err)
+		return Pinctrl{}, fmt.Errorf("failed to open %s: %w", memPath, err)
 	}
 
 	/*
@@ -299,32 +301,33 @@ func createGPIOVPage(memPath string, chipSize uint64) (*os.File, mmap.MMap, *byt
 		starting address and its page's starting address. Your virtual space will need to extend that difference
 		to properly map to the end of your desired space. This matters when the length of data you're trying to use
 		spans one or more page boundaries.
+	*/
 
-		In this implementation, we know that our base address is aligned with the beginning of a page. However,
-		below is the implementation required when they do not align.
-
+	var offset int64 // default 0 offset
+	lenMapping := int(chipSize)
+	// adjust the map parameters to handle the misalignment
+	if !useGPIOMem {
 		pageSize := uint64(syscall.Getpagesize())
-		pageStart := b.physAddr & (pageSize - 1)
+		pageStart := physAddr & (pageSize - 1)
 		// difference between base address of the page and the address we're actually tring to access
-		dataStartingAddrDiff = b.physAddr - pageStart
-		lenMapping := int(dataStartingAddrDiff)) + int(b.chipSize)
-		b.vPage, err := mmap.MapRegion(b.memFile, lenMapping, mmap.RDWR, 0, 0)
+		dataStartingAddrDiff := physAddr - pageStart
+		offset = int64(pageStart)
+		lenMapping = int(dataStartingAddrDiff) + int(chipSize)
+	}
 
+	/*
 		***** for the mmap() call ****
 		- if we were using /dev/mem, then offset = pageStart.
 		the file we 'open' starts at the base address of gpio memory for chip 0, not at the base of memory.
 		- we would access our memory by accessing vPage[dataStartingAddrDiff] if the start address of the data != page start address
-
 	*/
-
-	// 0 flag = shared, 0 offset because we are starting from the beginning of the mem/gpiomem0 file. offs = pageStart if we opened /dev/mem
-	vPage, err := mmap.MapRegion(memFile, int(chipSize), mmap.RDWR, 0, 0)
+	// 0 flag = shared
+	vPage, err := mmap.MapRegion(memFile, lenMapping, mmap.RDWR, 0, offset)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to mmap: %w", err)
+		return Pinctrl{}, fmt.Errorf("failed to mmap: %w", err)
 	}
 
-	virtAddr := &vPage[0]
-	return memFile, vPage, virtAddr, nil
+	return Pinctrl{MemFile: memFile, VPage: vPage, PhysAddr: physAddr, VirtAddr: &vPage[0]}, nil
 }
 
 // SetupPinControl sets up GPIO pin memory access by parsing the device tree for relevant address information.
@@ -359,16 +362,18 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	// to run tests with. We exit since we cannot actually access memory,
 	// which means we can't create a virtual page either.
 	if testingMode {
-		return Pinctrl{PhysAddr: physAddr, Cfg: cfg}, nil
+		return Pinctrl{PhysAddr: physAddr, Cfg: cfg, logger: logger}, nil
 	}
 
-	memFile, vPage, virtAddr, err := createGPIOVPage(cfg.GPIOMemPath, cfg.ChipSize)
+	ctrl, err := createGPIOVPage(cfg.DevMemPath, cfg.ChipSize, physAddr, cfg.UseGPIOMem)
 	if err != nil {
 		logger.Errorf("error creating virtual page from GPIO physical address")
 		return Pinctrl{}, err
 	}
+	ctrl.logger = logger
+	ctrl.Cfg = cfg
 
-	return Pinctrl{MemFile: memFile, VPage: vPage, VirtAddr: virtAddr, PhysAddr: physAddr, Cfg: cfg, logger: logger}, nil
+	return ctrl, nil
 }
 
 // Close cleans up mapped memory / files related to pin control upon board close() call.
