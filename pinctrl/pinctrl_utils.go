@@ -16,6 +16,8 @@ import (
 	"go.viam.com/rdk/logging"
 )
 
+const dtBase = "/proc/device-tree"
+
 /*
 rangeInfo represents the info provided in the ranges property of a device tree.
 It provides a mapping between addresses in the child address space to the parent
@@ -39,7 +41,6 @@ type rangeInfo struct {
 type Config struct {
 	GPIOChipPath string // path to the gpio chip in the device tree
 	GPIOMemPath  string
-	DTBase       string // base path of the device tree e.g. /proc/device-tree
 	TestPath     string // path to a mock device tree to use in tests
 	ChipSize     uint64 // length of chip's address space in memory
 	UseAlias     bool   // if your board has an alias for the chip, you can use this instead
@@ -47,9 +48,9 @@ type Config struct {
 
 func (cfg *Config) getBaseNodePath() string {
 	if cfg.TestPath != "" {
-		return cfg.TestPath + cfg.DTBase
+		return cfg.TestPath + dtBase
 	}
-	return cfg.DTBase
+	return dtBase
 }
 
 // Pinctrl defines the objects used when using pinctrl to control a board/device.
@@ -258,7 +259,7 @@ func setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath string, physAddress 
 // and 'ranges' property of its parents to map the child's physical address into the dev/gpiomem space.
 func setGPIONodePhysAddr(nodePath, dtBaseNodePath string) (uint64, error) {
 	var err error
-	currNodePath := dtBaseNodePath + nodePath // initially: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
+	currNodePath := dtBaseNodePath + nodePath // example on pi5: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
 	invalidAddr := uint64(math.NaN())
 	numCAddrCells := uint32(0)
 

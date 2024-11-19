@@ -15,7 +15,7 @@ func TestFindPathFromAlias(t *testing.T) {
 
 	pinctrlCfg := Config{
 		GPIOChipPath: "gpio0", GPIOMemPath: "/dev/gpiomem0", UseAlias: true,
-		DTBase: "/proc/device-tree", ChipSize: 0x30000, TestPath: "./mock-device-tree",
+		ChipSize: 0x30000, TestPath: "./mock-device-tree",
 	}
 
 	boardPinCtrl, err := SetupPinControl(pinctrlCfg, logger)
@@ -27,7 +27,6 @@ func TestFindPathFromAlias(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	test.That(t, cleanFilePath(alias), test.ShouldEqual, cleanFilePath(path))
 	test.That(t, boardPinCtrl.Close(), test.ShouldBeNil)
-
 }
 
 func TestSetupNoAlias(t *testing.T) {
@@ -35,7 +34,7 @@ func TestSetupNoAlias(t *testing.T) {
 
 	pinctrlCfg := Config{
 		GPIOChipPath: "/axi/pcie@120000/rp1/gpio@d0000", GPIOMemPath: "/dev/gpiomem0", UseAlias: false,
-		DTBase: "/proc/device-tree", ChipSize: 0x30000, TestPath: "./mock-device-tree",
+		ChipSize: 0x30000, TestPath: "./mock-device-tree",
 	}
 
 	boardPinCtrl, err := SetupPinControl(pinctrlCfg, logger)
