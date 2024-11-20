@@ -39,6 +39,8 @@ type rangeInfo struct {
 }
 
 // Config is the config used to define the names for pinctrl on a board. These are needed to use pinctrl with a device.
+// TODO: get this to work with hardcoded gpio addresses
+// such as https://github.com/orangepi-xunlong/wiringOP/blob/e7912890f451f479d2a6908342fac37891bae691/wiringPi/wiringPi.h#L69
 type Config struct {
 	GPIOChipPath string // path to the gpio chip in the device tree
 	DevMemPath   string
