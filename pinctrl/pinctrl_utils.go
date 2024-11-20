@@ -339,7 +339,7 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	// This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
 
 	// If we are running tests, we need to read files/folders from our module's local sample device tree.
-	// This is located at raspi5-pinctrl/pi5/mock-device-tree
+	// This is located in mock-device-tree
 	testingMode := cfg.TestPath != ""
 	dtBaseNodePath := cfg.getBaseNodePath()
 
@@ -347,14 +347,14 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	if cfg.UseAlias {
 		nodePath, err = findPathFromAlias(cfg.GPIOChipPath, dtBaseNodePath)
 		if err != nil {
-			logger.Errorf("error getting raspi5 GPIO nodePath")
+			logger.Errorf("error getting GPIO nodePath")
 			return Pinctrl{}, err
 		}
 	}
 
 	physAddr, err := setGPIONodePhysAddr(nodePath, dtBaseNodePath)
 	if err != nil {
-		logger.Errorf("error getting raspi5 GPIO physical address")
+		logger.Errorf("error getting GPIO physical address")
 		return Pinctrl{}, err
 	}
 
