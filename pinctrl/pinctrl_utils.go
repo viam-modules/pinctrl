@@ -344,14 +344,12 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	dtBaseNodePath := cfg.getBaseNodePath()
 
 	nodePath := cfg.GPIOChipPath
-	logger.Info("no alias path: ", nodePath)
 	if cfg.UseAlias {
 		nodePath, err = findPathFromAlias(cfg.GPIOChipPath, dtBaseNodePath)
 		if err != nil {
 			logger.Errorf("error getting raspi5 GPIO nodePath")
 			return Pinctrl{}, err
 		}
-		logger.Info("nodepath: ", nodePath)
 	}
 
 	physAddr, err := setGPIONodePhysAddr(nodePath, dtBaseNodePath)
