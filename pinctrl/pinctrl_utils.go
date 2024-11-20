@@ -269,7 +269,7 @@ func setGPIONodePhysAddr(nodePath, dtBaseNodePath string) (uint64, error) {
 
 	/* Call recursive function to calculate phys addr. Works way up the device tree, using the information
 	found in #ranges at every node to translate from the child's address space to the parent's address space
-	until we get the child's physical address in all of /dev/gpiomem. */
+	until we get the child's physical address in all of /dev/mem. */
 	physAddr, err := setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath, invalidAddr, numCAddrCells)
 	if err != nil {
 		return 0, fmt.Errorf("trouble calculating phys addr for %s: %w", nodePath, err)
