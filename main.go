@@ -4,10 +4,11 @@
 package main
 
 import (
-	"github.com/viam-modules/pinctrl/pi5"
 	"go.viam.com/rdk/components/board"
 	"go.viam.com/rdk/module"
 	"go.viam.com/rdk/resource"
+
+	"github.com/viam-modules/pinctrl/pi5"
 )
 
 func main() {

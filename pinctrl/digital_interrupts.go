@@ -28,7 +28,7 @@ type DigitalInterrupt struct {
 // NewDigitalInterrupt constructs a new digitalInterrupt from the config and pinMapping. If
 // oldInterrupt is not nil, all channels added to it are added to the new interrupt and removed
 // from the old one.
-func NewDigitalInterrupt(
+func (ctrl *Pinctrl) NewDigitalInterrupt(
 	config board.DigitalInterruptConfig,
 	pinMapping genericlinux.GPIOBoardMapping,
 	oldInterrupt *DigitalInterrupt,

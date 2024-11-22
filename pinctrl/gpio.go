@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	mmap "github.com/edsrzf/mmap-go"
 	"github.com/mkch/gpio"
 	"go.viam.com/rdk/components/board"
 	gl "go.viam.com/rdk/components/board/genericlinux"
@@ -39,14 +38,14 @@ type GPIOPin struct {
 }
 
 // CreateGpioPin creates a gpio pin.
-func CreateGpioPin(mapping gl.GPIOBoardMapping, gpioPinsPage *mmap.MMap, logger logging.Logger) *GPIOPin {
+func (ctrl *Pinctrl) CreateGpioPin(mapping gl.GPIOBoardMapping) *GPIOPin {
 	pin := GPIOPin{
 		devicePath: mapping.GPIOChipDev,
 		offset:     uint32(mapping.GPIO),
-		logger:     logger,
+		logger:     ctrl.logger,
 	}
 	if mapping.HWPWMSupported {
-		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, logger, gpioPinsPage)
+		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, ctrl.logger, &ctrl.VPage)
 	}
 	return &pin
 }
@@ -199,7 +198,6 @@ func (pin *GPIOPin) startSoftwarePWM() error {
 		if pin.hwPwm != nil {
 			return pin.hwPwm.Close()
 		}
-		pin.logger.Warn("yo screw your pwm")
 		// If we used to have a software PWM loop, we might have stopped the loop while the pin was
 		// on. Remember to turn it off!
 		return pin.setInternal(false)
@@ -207,7 +205,6 @@ func (pin *GPIOPin) startSoftwarePWM() error {
 
 	// Otherwise, we need to output a PWM signal.
 	if pin.hwPwm != nil {
-		pin.logger.Warn("yo hardware")
 		if pin.pwmFreqHz > 1 {
 			if err := pin.closeGpioFd(); err != nil {
 				return err
@@ -226,7 +223,6 @@ func (pin *GPIOPin) startSoftwarePWM() error {
 			return err
 		}
 	}
-	pin.logger.Warn("yo software")
 	// If we get here, we need a software loop to drive the PWM signal, either because this pin
 	// doesn't have hardware support or because we want to drive it at such a low frequency that
 	// the hardware chip can't do it.
