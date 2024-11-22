@@ -336,26 +336,28 @@ func createGPIOVPage(memPath string, chipSize, physAddr uint64, useGPIOMem bool)
 // Implementers will need to contsruct a PinctrlConfig to use this.
 func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	var err error
+	physAddr := uint64(0)
 	// This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
 
 	// If we are running tests, we need to read files/folders from our module's local sample device tree.
 	// This is located in mock-device-tree
 	testingMode := cfg.TestPath != ""
 	dtBaseNodePath := cfg.getBaseNodePath()
+	if cfg.UseGPIOMem {
+		nodePath := cfg.GPIOChipPath
+		if cfg.UseAlias {
+			nodePath, err = findPathFromAlias(cfg.GPIOChipPath, dtBaseNodePath)
+			if err != nil {
+				logger.Errorf("error getting GPIO nodePath")
+				return Pinctrl{}, err
+			}
+		}
 
-	nodePath := cfg.GPIOChipPath
-	if cfg.UseAlias {
-		nodePath, err = findPathFromAlias(cfg.GPIOChipPath, dtBaseNodePath)
+		physAddr, err = setGPIONodePhysAddr(nodePath, dtBaseNodePath)
 		if err != nil {
-			logger.Errorf("error getting GPIO nodePath")
+			logger.Errorf("error getting GPIO physical address")
 			return Pinctrl{}, err
 		}
-	}
-
-	physAddr, err := setGPIONodePhysAddr(nodePath, dtBaseNodePath)
-	if err != nil {
-		logger.Errorf("error getting GPIO physical address")
-		return Pinctrl{}, err
 	}
 
 	// In our current pinctrl_test.go we do not have any fake or real board
