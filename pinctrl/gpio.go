@@ -39,7 +39,7 @@ type GPIOPin struct {
 
 // CreateGpioPin creates a gpio pin.
 // defaultPWMFreqHz is used to initialize the pwmFreqHz of the pin.
-// This prevents SetPWM calls from failing silently for the user, if the default frequency is set to a nonzero value.
+// Allows users to define a pwm using just SetPWM calls when testing, if the default frequency is set to a nonzero value.
 func (ctrl *Pinctrl) CreateGpioPin(mapping gl.GPIOBoardMapping, defaultPWMFreqHz uint) *GPIOPin {
 	pin := GPIOPin{
 		devicePath: mapping.GPIOChipDev,

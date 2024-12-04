@@ -194,16 +194,17 @@ func (pwm *pwmDevice) wrapError(err error) error {
 /*
 For all pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
 For a given pin, this method determines:
-
  1. which bank the pin belongs to
-
+    Currently this code is specific to the pi5, so we know that all of our pins have to be within bank 0.
+    Eventually we should change this to handle other banks
  2. the starting address of its 8 byte data chunk.
 
-    note: numGPIOPins is a hardcoded value for the pi5
+note: numGPIOPins is a hardcoded value for the pi5
 */
 func getGPIOPinAddress(gpioNumber int) (int64, error) {
-	const pinDataSizeBytes = 0x8 // 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
+	const pinDataSizeBytes = 0x8 // 8 bytes per pin: 4 bytes represent control statuses and 4 bytes are for different control modes
 
+	// check that the given pin is in bank 0(it should be)
 	if !(1 <= gpioNumber && gpioNumber <= numGPIOPins) {
 		return -1, errors.New("pin is out of bank range")
 	}
