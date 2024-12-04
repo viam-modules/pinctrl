@@ -76,7 +76,8 @@ const (
 
 type pwmDevice struct {
 	chipPath string
-	line     int
+	pwmLine  int
+	gpioLine int
 
 	// We have no mutable state, but the mutex is used to write to multiple pseudofiles atomically.
 	mu     sync.Mutex
@@ -87,8 +88,8 @@ type pwmDevice struct {
 	gpioPinsPage *mmap.MMap
 }
 
-func newPwmDevice(chipPath string, line int, logger logging.Logger, gpioPinsPage *mmap.MMap) *pwmDevice {
-	return &pwmDevice{chipPath: chipPath, line: line, logger: logger, gpioPinsPage: gpioPinsPage}
+func newPwmDevice(chipPath string, pwmLine, gpioLine int, logger logging.Logger, gpioPinsPage *mmap.MMap) *pwmDevice {
+	return &pwmDevice{chipPath: chipPath, pwmLine: pwmLine, gpioLine: gpioLine, logger: logger, gpioPinsPage: gpioPinsPage}
 }
 
 func writeValue(filepath string, value uint64, logger logging.Logger) error {
@@ -102,8 +103,9 @@ func writeValue(filepath string, value uint64, logger logging.Logger) error {
 	// we're trying to debug something in here, log the error even if it will later be ignored.
 	if err != nil {
 		logger.Debugf("Encountered error writing to sysfs: %s", err)
+		return errors.Join(err, errors.New(filepath))
 	}
-	return errors.Join(err, errors.New(filepath))
+	return nil
 }
 
 func (pwm *pwmDevice) writeChip(filename string, value uint64) error {
@@ -111,7 +113,7 @@ func (pwm *pwmDevice) writeChip(filename string, value uint64) error {
 }
 
 func (pwm *pwmDevice) linePath() string {
-	return fmt.Sprintf("%s/pwm%d", pwm.chipPath, pwm.line)
+	return fmt.Sprintf("%s/pwm%d", pwm.chipPath, pwm.pwmLine)
 }
 
 func (pwm *pwmDevice) writeLine(filename string, value uint64) error {
@@ -123,13 +125,13 @@ func (pwm *pwmDevice) export() error {
 	if _, err := os.Lstat(pwm.linePath()); err != nil {
 		if os.IsNotExist(err) {
 			// happy path
-			return pwm.writeChip("export", uint64(pwm.line))
+			return pwm.writeChip("export", uint64(pwm.pwmLine))
 		}
 		return err // Something unexpected has gone wrong.
 	}
 	// Otherwise, the line we're trying to export already exists.
 	pwm.logger.Debugf("Skipping re-export of already-exported line %d on HW PWM chip %s",
-		pwm.line, pwm.chipPath)
+		pwm.pwmLine, pwm.chipPath)
 	return nil
 }
 
@@ -139,7 +141,7 @@ func (pwm *pwmDevice) unexport() error {
 	if _, err := os.Lstat(pwm.linePath()); err != nil {
 		if os.IsNotExist(err) {
 			pwm.logger.Debugf("Skipping unexport of already-unexported line %d on HW PWM chip %s",
-				pwm.line, pwm.chipPath)
+				pwm.pwmLine, pwm.chipPath)
 			return nil
 		}
 		return err // Something has gone wrong.
@@ -156,7 +158,7 @@ func (pwm *pwmDevice) unexport() error {
 	// the pin too quickly after changing something else about it (e.g., disabling it), the whole
 	// PWM system gets corrupted. Sleep for a small amount of time to avoid this.
 	time.Sleep(10 * time.Millisecond)
-	if err := pwm.writeChip("unexport", uint64(pwm.line)); err != nil {
+	if err := pwm.writeChip("unexport", uint64(pwm.pwmLine)); err != nil {
 		return err
 	}
 
@@ -184,13 +186,34 @@ func (pwm *pwmDevice) disable() error {
 // Only call this from public functions, to avoid double-wrapping the errors.
 func (pwm *pwmDevice) wrapError(err error) error {
 	if err != nil {
-		return errors.Join(err, fmt.Errorf("HW PWM chipPath %s, line %d", pwm.chipPath, pwm.line))
+		return errors.Join(err, fmt.Errorf("HW PWM chipPath %s, line %d", pwm.chipPath, pwm.pwmLine))
 	}
 	return nil
 }
 
+/*
+For all pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
+For a given pin, this method determines:
+
+ 1. which bank the pin belongs to
+
+ 2. the starting address of its 8 byte data chunk.
+
+    note: numGPIOPins is a hardcoded value for the pi5
+*/
+func getGPIOPinAddress(gpioNumber int) (int64, error) {
+	const pinDataSizeBytes = 0x8 // 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
+
+	if !(1 <= gpioNumber && gpioNumber <= numGPIOPins) {
+		return -1, errors.New("pin is out of bank range")
+	}
+
+	pinAddressOffset := (gpioNumber * pinDataSizeBytes)
+	return int64(pinAddressOffset), nil
+}
+
 // updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
-func (pwm *pwmDevice) writeToPinModeByte(gpioNumber int, newMode byte) error {
+func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
 	/*
 		Remember that GPIO mode data is stored in a different area of memory, and this area of memory relates to
 		setting alternative modes; in this case we set ALT3 (PWM Mode). When we want to use GPIO Mode, we will set the
@@ -205,7 +228,7 @@ func (pwm *pwmDevice) writeToPinModeByte(gpioNumber int, newMode byte) error {
 	*/
 
 	// Find base address of GPIO Pin in memory:
-	pinAddress, err := getGPIOPinAddress(gpioNumber)
+	pinAddress, err := getGPIOPinAddress(pwm.gpioLine)
 	if err != nil {
 		return fmt.Errorf("error getting gpio pin address: %w", err)
 	}
@@ -213,58 +236,9 @@ func (pwm *pwmDevice) writeToPinModeByte(gpioNumber int, newMode byte) error {
 	// Get pin's memory contents from virtual page; set the 5th byte of pin to mode
 	altModeIndex := int64(4)
 	vPage := *(pwm.gpioPinsPage)
-	vPage[pinAddress+altModeIndex] = newMode
+	vPage[pinAddress+altModeIndex] = pinMode
 
 	return nil
-}
-
-/*
-For all pins belonging to the same bank, pin data is stored contiguously and in 8 byte chunks.
-For a given pin, this method determines:
- 1. which bank the pin belongs to
- 2. the starting address of its 8 byte data chunk.
-*/
-func getGPIOPinAddress(gpioNumber int) (int64, error) {
-	const pinDataSizeBytes = 0x8 // 4 bytes = control status bits, 4 bytes to represent all possible control modes. 8 bytes per pin
-
-	if !(1 <= gpioNumber && gpioNumber <= numGPIOPins) {
-		return -1, errors.New("pin is out of bank range")
-	}
-
-	pinAddressOffset := (gpioNumber * pinDataSizeBytes)
-	return int64(pinAddressOffset), nil
-}
-
-/*
-This function uses pwm.line to determine what GPIO Pin it needs to set to the inputted mode
-Each pwm line corresponds to a GPIO Pin. The pi5 mapping is:
-
-	PWM Line 0 -> GPIO 12
-	PWM Line 1 -> GPIO 13
-	PWM Line 2 -> GPIO 18
-	PWM Line 3 -> GPIO 19
-
-Other mappings for different pis can be found here:  https://pypi.org/project/rpi-hardware-pwm/#modal-close
-
-Use the writeToPinModeByte to set the mode to PWM or GPIO using this helper method. Pin Mode will either be 'PWMMode' or 'GPIO'
-
-TODO: Make writing to GPIO Pins generalizeable, and not dependent on the pwm following this exact structure.
-*/
-func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
-	switch pwm.line {
-	case 0:
-		err = pwm.writeToPinModeByte(12, pinMode)
-	case 1:
-		err = pwm.writeToPinModeByte(13, pinMode)
-	case 2:
-		err = pwm.writeToPinModeByte(18, pinMode)
-	case 3:
-		err = pwm.writeToPinModeByte(19, pinMode)
-	default:
-		return errors.New("attempting to use unknown PWM line")
-	}
-
-	return err
 }
 
 // SetPwm configures an exported pin and enables its output signal.
@@ -279,12 +253,10 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 	defer func() {
 		err = pwm.wrapError(err)
 	}()
-
 	// Set pin mode to hardware pwm enabled before using PWM.
 	if err := pwm.SetPinMode(PWMMode); err != nil {
 		return err
 	}
-
 	// Every time this pin is used as a (non-PWM) GPIO input or output, it gets unexported on the
 	// PWM chip. Make sure to re-export it here.
 	if err := pwm.export(); err != nil {
@@ -302,7 +274,7 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 		// to 0, and enabling the pin with a period of 0 results in errors. Let's try making the
 		// period non-zero and enabling it again.
 		pwm.logger.Debugf("Cannot enable HW PWM device %s line %d, will try changing period: %s",
-			pwm.chipPath, pwm.line, err)
+			pwm.chipPath, pwm.pwmLine, err)
 		if err := pwm.writeLine("period", safePeriodNs); err != nil {
 			return err
 		}
