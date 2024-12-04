@@ -38,11 +38,14 @@ type GPIOPin struct {
 }
 
 // CreateGpioPin creates a gpio pin.
-func (ctrl *Pinctrl) CreateGpioPin(mapping gl.GPIOBoardMapping) *GPIOPin {
+// defaultPWMFreqHz is used to initialize the pwmFreqHz of the pin.
+// This prevents SetPWM calls from failing silently for the user, if the default frequency is set to a nonzero value
+func (ctrl *Pinctrl) CreateGpioPin(mapping gl.GPIOBoardMapping, defaultPWMFreqHz uint) *GPIOPin {
 	pin := GPIOPin{
 		devicePath: mapping.GPIOChipDev,
 		offset:     uint32(mapping.GPIO),
 		logger:     ctrl.logger,
+		pwmFreqHz:  defaultPWMFreqHz,
 	}
 	if mapping.HWPWMSupported {
 		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, ctrl.logger, &ctrl.VPage)

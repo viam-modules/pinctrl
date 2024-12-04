@@ -24,6 +24,8 @@ import (
 // Model for rpi5.
 var Model = resource.NewModel("viam-labs", "pinctrl", "rpi5")
 
+const defaultPWMFreqHz = 800 // default used in pigpio
+
 func init() {
 	gpioMappings, err := gl.GetGPIOBoardMappings(Model.Name, boardInfoMappings)
 	var noBoardErr gl.NoBoardFoundError
@@ -134,7 +136,7 @@ func newBoard(
 
 	// Initialize the GPIO pins
 	for newName, mapping := range gpioMappings {
-		b.gpios[newName] = b.boardPinCtrl.CreateGpioPin(mapping)
+		b.gpios[newName] = b.boardPinCtrl.CreateGpioPin(mapping, 800)
 	}
 
 	if err := b.Reconfigure(ctx, nil, conf); err != nil {
