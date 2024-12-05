@@ -136,7 +136,7 @@ func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
 	for _, pullConf := range newConf.Pulls {
 		pin, ok := b.gpioMappings[pullConf.Pin]
 		if !ok {
-			return errors.New("unexpected pull")
+			return fmt.Errorf("pin %v could not be found", pullConf.Pin)
 		}
 		gpioNum := pin.GPIO
 		switch pullConf.Pull {

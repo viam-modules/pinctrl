@@ -76,8 +76,8 @@ const (
 
 type pwmDevice struct {
 	chipPath string
-	pwmLine  int
-	gpioLine int
+	pwmID    int
+	line     int
 
 	// We have no mutable state, but the mutex is used to write to multiple pseudofiles atomically.
 	mu     sync.Mutex
@@ -88,8 +88,10 @@ type pwmDevice struct {
 	gpioPinsPage *mmap.MMap
 }
 
-func newPwmDevice(chipPath string, pwmLine, gpioLine int, logger logging.Logger, gpioPinsPage *mmap.MMap) *pwmDevice {
-	return &pwmDevice{chipPath: chipPath, pwmLine: pwmLine, gpioLine: gpioLine, logger: logger, gpioPinsPage: gpioPinsPage}
+// TODO: we currently use sysfs to set the hardware pwm, and pinctrl(/dev/mem) for setting the pin mode.
+// Eventually we want to set the hardware pwm using pinctrl instead.
+func newPwmDevice(chipPath string, pwmID, line int, logger logging.Logger, gpioPinsPage *mmap.MMap) *pwmDevice {
+	return &pwmDevice{chipPath: chipPath, pwmID: pwmID, line: line, logger: logger, gpioPinsPage: gpioPinsPage}
 }
 
 func writeValue(filepath string, value uint64, logger logging.Logger) error {
@@ -113,7 +115,7 @@ func (pwm *pwmDevice) writeChip(filename string, value uint64) error {
 }
 
 func (pwm *pwmDevice) linePath() string {
-	return fmt.Sprintf("%s/pwm%d", pwm.chipPath, pwm.pwmLine)
+	return fmt.Sprintf("%s/pwm%d", pwm.chipPath, pwm.pwmID)
 }
 
 func (pwm *pwmDevice) writeLine(filename string, value uint64) error {
@@ -125,13 +127,13 @@ func (pwm *pwmDevice) export() error {
 	if _, err := os.Lstat(pwm.linePath()); err != nil {
 		if os.IsNotExist(err) {
 			// happy path
-			return pwm.writeChip("export", uint64(pwm.pwmLine))
+			return pwm.writeChip("export", uint64(pwm.pwmID))
 		}
 		return err // Something unexpected has gone wrong.
 	}
 	// Otherwise, the line we're trying to export already exists.
 	pwm.logger.Debugf("Skipping re-export of already-exported line %d on HW PWM chip %s",
-		pwm.pwmLine, pwm.chipPath)
+		pwm.pwmID, pwm.chipPath)
 	return nil
 }
 
@@ -141,7 +143,7 @@ func (pwm *pwmDevice) unexport() error {
 	if _, err := os.Lstat(pwm.linePath()); err != nil {
 		if os.IsNotExist(err) {
 			pwm.logger.Debugf("Skipping unexport of already-unexported line %d on HW PWM chip %s",
-				pwm.pwmLine, pwm.chipPath)
+				pwm.pwmID, pwm.chipPath)
 			return nil
 		}
 		return err // Something has gone wrong.
@@ -158,7 +160,7 @@ func (pwm *pwmDevice) unexport() error {
 	// the pin too quickly after changing something else about it (e.g., disabling it), the whole
 	// PWM system gets corrupted. Sleep for a small amount of time to avoid this.
 	time.Sleep(10 * time.Millisecond)
-	if err := pwm.writeChip("unexport", uint64(pwm.pwmLine)); err != nil {
+	if err := pwm.writeChip("unexport", uint64(pwm.pwmID)); err != nil {
 		return err
 	}
 
@@ -186,7 +188,7 @@ func (pwm *pwmDevice) disable() error {
 // Only call this from public functions, to avoid double-wrapping the errors.
 func (pwm *pwmDevice) wrapError(err error) error {
 	if err != nil {
-		return errors.Join(err, fmt.Errorf("HW PWM chipPath %s, line %d", pwm.chipPath, pwm.pwmLine))
+		return errors.Join(err, fmt.Errorf("HW PWM chipPath %s, line %d", pwm.chipPath, pwm.pwmID))
 	}
 	return nil
 }
@@ -214,7 +216,7 @@ func getGPIOPinAddress(gpioNumber int) (int64, error) {
 }
 
 // updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
-func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
+func (pwm *pwmDevice) SetPinMode(pinMode byte) error {
 	/*
 		Remember that GPIO mode data is stored in a different area of memory, and this area of memory relates to
 		setting alternative modes; in this case we set ALT3 (PWM Mode). When we want to use GPIO Mode, we will set the
@@ -229,7 +231,7 @@ func (pwm *pwmDevice) SetPinMode(pinMode byte) (err error) {
 	*/
 
 	// Find base address of GPIO Pin in memory:
-	pinAddress, err := getGPIOPinAddress(pwm.gpioLine)
+	pinAddress, err := getGPIOPinAddress(pwm.line)
 	if err != nil {
 		return fmt.Errorf("error getting gpio pin address: %w", err)
 	}
@@ -275,7 +277,7 @@ func (pwm *pwmDevice) SetPwm(freqHz uint, dutyCycle float64) (err error) {
 		// to 0, and enabling the pin with a period of 0 results in errors. Let's try making the
 		// period non-zero and enabling it again.
 		pwm.logger.Debugf("Cannot enable HW PWM device %s line %d, will try changing period: %s",
-			pwm.chipPath, pwm.pwmLine, err)
+			pwm.chipPath, pwm.pwmID, err)
 		if err := pwm.writeLine("period", safePeriodNs); err != nil {
 			return err
 		}
