@@ -24,6 +24,8 @@ import (
 // Model for rpi5.
 var Model = resource.NewModel("viam-labs", "pinctrl", "rpi5")
 
+const defaultPWMFreqHz = 800 // default used in pigpio
+
 func init() {
 	gpioMappings, err := gl.GetGPIOBoardMappings(Model.Name, boardInfoMappings)
 	var noBoardErr gl.NoBoardFoundError
@@ -32,39 +34,6 @@ func init() {
 	}
 
 	RegisterBoard(Model.Name, gpioMappings)
-}
-
-// pins are stored in /dev/gpiomem in order of gpio nums, so we must convert from pin name (physical num) to GPIO number.
-// these are redundant with gpioMappings from gl.GetGPIOBoardMappings/data.go
-var pinNameToGPIONum = map[string]int{
-	"3":  2,
-	"5":  3,
-	"7":  4,
-	"8":  14,
-	"10": 15,
-	"11": 17,
-	"12": 18,
-	"13": 27,
-	"15": 22,
-	"16": 23,
-	"18": 24,
-	"19": 10,
-	"21": 9,
-	"22": 25,
-	"23": 11,
-	"24": 8,
-	"26": 7,
-	"27": 0,
-	"28": 1,
-	"29": 5,
-	"31": 6,
-	"32": 12,
-	"33": 13,
-	"35": 19,
-	"36": 16,
-	"37": 26,
-	"38": 20,
-	"40": 21,
 }
 
 // register values for configuring pull up/pull down in mem.
@@ -134,7 +103,7 @@ func newBoard(
 
 	// Initialize the GPIO pins
 	for newName, mapping := range gpioMappings {
-		b.gpios[newName] = b.boardPinCtrl.CreateGpioPin(mapping)
+		b.gpios[newName] = b.boardPinCtrl.CreateGpioPin(mapping, defaultPWMFreqHz)
 	}
 
 	if err := b.Reconfigure(ctx, nil, conf); err != nil {
@@ -165,7 +134,11 @@ func (b *pinctrlpi5) Reconfigure(
 
 func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
 	for _, pullConf := range newConf.Pulls {
-		gpioNum := pinNameToGPIONum[pullConf.Pin]
+		pin, ok := b.gpioMappings[pullConf.Pin]
+		if !ok {
+			return fmt.Errorf("pin %v could not be found", pullConf.Pin)
+		}
+		gpioNum := pin.GPIO
 		switch pullConf.Pull {
 		case "none":
 			b.pulls[gpioNum] = pullNoneMode
