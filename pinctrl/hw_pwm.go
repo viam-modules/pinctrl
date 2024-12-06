@@ -215,6 +215,11 @@ func getGPIOPinAddress(gpioNumber int) (int64, error) {
 	return int64(pinAddressOffset), nil
 }
 
+/*
+TODO: Make sure this code works for other boards
+Other mappings for different pis can be found here:  https://pypi.org/project/rpi-hardware-pwm/#modal-close
+
+*/
 // updates the given mode of a pin by finding its specific location in memory & writing to the 'mode' byte in the 8 byte block of pin data.
 func (pwm *pwmDevice) SetPinMode(pinMode byte) error {
 	/*
