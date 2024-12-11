@@ -224,7 +224,8 @@ func (b *pinctrlpi5) DigitalInterruptByName(name string) (board.DigitalInterrupt
 		Name: name,
 		Pin:  name,
 	}
-	interrupt, err := b.boardPinCtrl.NewDigitalInterrupt(defaultInterruptConfig, mapping, nil)
+
+	interrupt, err := b.boardPinCtrl.NewDigitalInterrupt(defaultInterruptConfig, mapping, 0, nil)
 	if err != nil {
 		return nil, err
 	}
