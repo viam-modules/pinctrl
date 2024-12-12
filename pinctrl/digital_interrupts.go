@@ -131,7 +131,7 @@ func (di *DigitalInterrupt) monitor(ctx context.Context) {
 					TimestampNanosec: uint64(eventTime),
 				}
 
-				// store the store the timestamp of the interrupt trigger
+				//  store the timestamp of the interrupt trigger
 				di.lastEvent = eventTime
 				for _, ch := range di.channels {
 					select {
