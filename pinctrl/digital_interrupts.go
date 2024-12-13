@@ -17,20 +17,25 @@ import (
 
 // DigitalInterrupt is the struct for managing a digital interrupt that satisfies a board.DigitalInterrupt.
 type DigitalInterrupt struct {
-	workers  *utils.StoppableWorkers
-	line     *gpio.LineWithEvent
-	mu       sync.Mutex // Protects everything below here
-	config   board.DigitalInterruptConfig
-	count    int64
-	channels []chan board.Tick
+	workers             *utils.StoppableWorkers
+	line                *gpio.LineWithEvent
+	mu                  sync.Mutex // Protects everything below here
+	config              board.DigitalInterruptConfig
+	count               int64
+	channels            []chan board.Tick
+	lastEvent           int64 // last time the event was triggered
+	debounceNanoSeconds int64
 }
 
 // NewDigitalInterrupt constructs a new digitalInterrupt from the config and pinMapping. If
 // oldInterrupt is not nil, all channels added to it are added to the new interrupt and removed
 // from the old one.
+// debounceMilliSeconds allows users to set a software debounce timer for their interrupt.
+// Setting this to 0 disables the feature.
 func (ctrl *Pinctrl) NewDigitalInterrupt(
 	config board.DigitalInterruptConfig,
 	pinMapping genericlinux.GPIOBoardMapping,
+	debounceMilliSeconds int,
 	oldInterrupt *DigitalInterrupt,
 ) (*DigitalInterrupt, error) {
 	chip, err := gpio.OpenChip(pinMapping.GPIOChipDev)
@@ -45,7 +50,7 @@ func (ctrl *Pinctrl) NewDigitalInterrupt(
 		return nil, err
 	}
 
-	di := DigitalInterrupt{line: line, config: config}
+	di := DigitalInterrupt{line: line, config: config, debounceNanoSeconds: int64(debounceMilliSeconds) * 1000000}
 	di.workers = utils.NewBackgroundStoppableWorkers(di.monitor)
 
 	if oldInterrupt != nil {
@@ -109,6 +114,12 @@ func (di *DigitalInterrupt) monitor(ctx context.Context) {
 			shouldReturn := func() bool {
 				di.mu.Lock()
 				defer di.mu.Unlock()
+				eventTime := event.Time.UnixNano()
+				// check if we should update
+				if di.debounceNanoSeconds != 0 && eventTime-di.lastEvent < di.debounceNanoSeconds {
+					// we have not passed the debounce time, ignore this interrupt
+					return false
+				}
 
 				if event.RisingEdge {
 					di.count++
@@ -117,8 +128,11 @@ func (di *DigitalInterrupt) monitor(ctx context.Context) {
 				tick := board.Tick{
 					Name:             di.config.Name,
 					High:             event.RisingEdge,
-					TimestampNanosec: uint64(event.Time.UnixNano()),
+					TimestampNanosec: uint64(eventTime),
 				}
+
+				//  store the timestamp of the interrupt trigger
+				di.lastEvent = eventTime
 				for _, ch := range di.channels {
 					select {
 					case <-ctx.Done():
