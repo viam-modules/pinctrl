@@ -59,12 +59,13 @@ func (cfg *Config) getBaseNodePath() string {
 
 // Pinctrl defines the objects used when using pinctrl to control a board/device.
 type Pinctrl struct {
-	VirtAddr *byte     // base address of mapped virtual page referencing the gpio chip data
-	PhysAddr uint64    // base address of the gpio chip data in /dev/mem/
-	MemFile  *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
-	VPage    mmap.MMap // virtual page pointing to dev/gpiomem's physical page in memory. Need to keep track of this for cleanup
-	Cfg      Config
-	logger   logging.Logger
+	VirtAddr  *byte     // base address of mapped virtual page referencing the gpio chip data
+	PhysAddr  uint64    // base address of the gpio chip data in /dev/mem/
+	MemFile   *os.File  // actual file to open that the virtual page will point to. Need to keep track of this for cleanup
+	VPage     mmap.MMap // virtual page pointing to dev/gpiomem's physical page in memory. Need to keep track of this for cleanup
+	Cfg       Config
+	logger    logging.Logger
+	pwmWorker *softwarePWMWorker // shared worker for all software PWM pins
 }
 
 // Cleans file path before opening files in device tree.
@@ -364,7 +365,7 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	// to run tests with. We exit since we cannot actually access memory,
 	// which means we can't create a virtual page either.
 	if testingMode {
-		return Pinctrl{PhysAddr: physAddr, Cfg: cfg, logger: logger}, nil
+		return Pinctrl{PhysAddr: physAddr, Cfg: cfg, logger: logger, pwmWorker: newSoftwarePWMWorker(logger)}, nil
 	}
 
 	ctrl, err := createGPIOVPage(cfg.DevMemPath, cfg.ChipSize, physAddr, cfg.UseGPIOMem)
@@ -374,12 +375,18 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	}
 	ctrl.logger = logger
 	ctrl.Cfg = cfg
+	ctrl.pwmWorker = newSoftwarePWMWorker(logger)
 
 	return ctrl, nil
 }
 
 // Close cleans up mapped memory / files related to pin control upon board close() call.
 func (ctrl *Pinctrl) Close() error {
+	// Stop the software PWM worker first
+	if ctrl.pwmWorker != nil {
+		ctrl.pwmWorker.Stop()
+	}
+
 	if ctrl.VPage != nil {
 		if err := ctrl.VPage.Unmap(); err != nil {
 			return fmt.Errorf("error during unmap: %w", err)
