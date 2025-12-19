@@ -191,8 +191,10 @@ func (pin *GPIOPin) setupPWM() error {
 	if pin.pwmDutyCyclePct == 0 || pin.pwmFreqHz == 0 {
 		// Remove from software PWM if needed.
 		if pin.usingSoftPWM && pin.pwmWorker != nil {
-			_ = pin.pwmWorker.RemovePin(pin)
 			pin.usingSoftPWM = false
+			if err := pin.pwmWorker.RemovePin(pin); err != nil {
+				return err
+			}
 		}
 		if pin.hwPwm != nil {
 			return pin.hwPwm.Close()
