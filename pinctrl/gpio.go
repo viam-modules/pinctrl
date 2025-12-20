@@ -187,7 +187,6 @@ func (pin *GPIOPin) Get(
 // Lock the mutex before calling this! We'll add the pin to the shared software PWM worker
 // if we need software PWM.
 func (pin *GPIOPin) setupPWM() error {
-
 	if pin.pwmDutyCyclePct == 0 || pin.pwmFreqHz == 0 {
 		// Remove from software PWM if needed.
 		if pin.usingSoftPWM && pin.pwmWorker != nil {
@@ -202,7 +201,7 @@ func (pin *GPIOPin) setupPWM() error {
 	}
 
 	// Otherwise, we need to output a PWM signal.
-	if pin.hwPwm != nil && pin.usingSoftPWM == false {
+	if pin.hwPwm != nil && !pin.usingSoftPWM {
 		if pin.pwmFreqHz > 1 {
 			if err := pin.closeGpioFd(); err != nil {
 				return err
@@ -280,7 +279,10 @@ func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[strin
 func (pin *GPIOPin) Close() error {
 	// Remove this pin from software PWM if it's running
 	if pin.usingSoftPWM && pin.pwmWorker != nil {
-		_ = pin.pwmWorker.RemovePin(pin)
+		if err := pin.pwmWorker.RemovePin(pin); err != nil {
+			// this error might be trigger if the software pwm worker is stopped before pins are destroyed
+			pin.logger.Warnf("error while removing the pin from the software pwm worker : %v", err)
+		}
 		pin.usingSoftPWM = false
 	}
 

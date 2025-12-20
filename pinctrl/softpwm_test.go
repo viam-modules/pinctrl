@@ -54,14 +54,8 @@ func (c *eventCollector) getEvents(pinNumber int) []pinEvent {
 	return result
 }
 
-func (c *eventCollector) eventCount(pinNumber int) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.events[pinNumber])
-}
-
 // calcFreqAndDutyCycle calculates the estimated frequency and duty cycle from recorded events.
-func (c *eventCollector) calcFreqAndDutyCycle(pinNumber int) (freqHz float64, dutyCycle float64) {
+func (c *eventCollector) calcFreqAndDutyCycle(pinNumber int) (freqHz, dutyCycle float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -75,7 +69,7 @@ func (c *eventCollector) calcFreqAndDutyCycle(pinNumber int) (freqHz float64, du
 	var totalOffTime time.Duration
 	var cycles int
 
-	for i := 0; i < len(events)-1; i++ {
+	for i := range len(events) - 1 {
 		duration := events[i+1].timestamp.Sub(events[i].timestamp)
 		if events[i].state {
 			totalOnTime += duration
@@ -155,8 +149,8 @@ func (p *fakeGPIOPin) setupPWM() error {
 	return p.pwmWorker.AddPin(p, float64(p.freqHz), p.dutyCyclePct)
 }
 
-func waitForCount(worker *softwarePWMWorker, expected int32, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
+func waitForCount(worker *softwarePWMWorker, expected int32) bool {
+	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		if worker.Count() == expected {
 			return true
@@ -183,29 +177,29 @@ func TestSoftwarePWMWorkerAddRemove(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	err = pin1.SetPWM(ctx, 0.5, nil)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, waitForCount(worker, 1, time.Second), test.ShouldBeTrue)
+	test.That(t, waitForCount(worker, 1), test.ShouldBeTrue)
 
 	err = pin2.SetPWMFreq(ctx, 20, nil)
 	test.That(t, err, test.ShouldBeNil)
 	err = pin2.SetPWM(ctx, 0.3, nil)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, waitForCount(worker, 2, time.Second), test.ShouldBeTrue)
+	test.That(t, waitForCount(worker, 2), test.ShouldBeTrue)
 
 	err = pin1.SetPWMFreq(ctx, 15, nil)
 	test.That(t, err, test.ShouldBeNil)
 	err = pin1.SetPWM(ctx, 0.7, nil)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, waitForCount(worker, 2, time.Second), test.ShouldBeTrue)
+	test.That(t, waitForCount(worker, 2), test.ShouldBeTrue)
 
 	err = pin1.SetPWM(ctx, 0, nil)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, waitForCount(worker, 1, time.Second), test.ShouldBeTrue)
+	test.That(t, waitForCount(worker, 1), test.ShouldBeTrue)
 
 	err = pin3.SetPWMFreq(ctx, 5, nil)
 	test.That(t, err, test.ShouldBeNil)
 	err = pin3.SetPWM(ctx, 0.25, nil)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, waitForCount(worker, 2, time.Second), test.ShouldBeTrue)
+	test.That(t, waitForCount(worker, 2), test.ShouldBeTrue)
 }
 
 func TestSoftwarePWMSinglePin(t *testing.T) {
@@ -224,12 +218,12 @@ func TestSoftwarePWMSinglePin(t *testing.T) {
 	test.That(t, err, test.ShouldBeNil)
 	err = fakePin.SetPWM(ctx, testDutyCycle, nil)
 	test.That(t, err, test.ShouldBeNil)
-	test.That(t, waitForCount(worker, 1, time.Second), test.ShouldBeTrue)
+	test.That(t, waitForCount(worker, 1), test.ShouldBeTrue)
 
 	time.Sleep(testDuration)
 	worker.Stop()
 	events := collector.getEvents(pinNumber)
-	//t.Logf("Collected %d events over %v", len(events), testDuration)
+	// t.Logf("Collected %d events over %v", len(events), testDuration)
 
 	expectedToggles := int(testDuration.Seconds() * float64(testFreqHz) * 2)
 	test.That(t, len(events), test.ShouldBeGreaterThanOrEqualTo, expectedToggles-1)
@@ -237,8 +231,8 @@ func TestSoftwarePWMSinglePin(t *testing.T) {
 
 	measuredFreq, measuredDuty := collector.calcFreqAndDutyCycle(pinNumber)
 
-	//t.Logf("Expected: freq=%d Hz, duty=%.2f%%", fakePin.freqHz, fakePin.dutyCyclePct*100)
-	//t.Logf("Measured: freq=%.2f Hz, duty=%.2f%%", measuredFreq, measuredDuty*100)
+	// t.Logf("Expected: freq=%d Hz, duty=%.2f%%", fakePin.freqHz, fakePin.dutyCyclePct*100)
+	// t.Logf("Measured: freq=%.2f Hz, duty=%.2f%%", measuredFreq, measuredDuty*100)
 
 	test.That(t, measuredFreq, test.ShouldBeBetween, float64(fakePin.freqHz)*(1-tolerance), float64(fakePin.freqHz)*(1+tolerance))
 	test.That(t, measuredDuty, test.ShouldBeBetween, fakePin.dutyCyclePct*(1-tolerance), fakePin.dutyCyclePct*(1+tolerance))
@@ -276,7 +270,7 @@ func TestSoftwarePWMSlowFrequency(t *testing.T) {
 		expectedOnDuration := time.Duration(float64(time.Second) / float64(testFreqHz) * testDutyCycle)
 		actualOnDuration := events[1].timestamp.Sub(events[0].timestamp)
 
-		//t.Logf("Expected ON duration: %v, Actual: %v", expectedOnDuration, actualOnDuration)
+		// t.Logf("Expected ON duration: %v, Actual: %v", expectedOnDuration, actualOnDuration)
 
 		test.That(t, actualOnDuration, test.ShouldBeBetween,
 			time.Duration(float64(expectedOnDuration)*(1-tolerance)),
@@ -297,7 +291,7 @@ func TestSoftwarePWMMultiplePins(t *testing.T) {
 	worker := newSoftwarePWMWorker(logging.NewTestLogger(t))
 
 	fakePins := make([]*fakeGPIOPin, numPins)
-	for i := 0; i < numPins; i++ {
+	for i := range numPins {
 		pinNumber := i + 1
 		freqHz := testFreqHz + uint(10*i)
 		fakePins[i] = newFakeGPIOPin(pinNumber, collector, worker)
@@ -307,17 +301,17 @@ func TestSoftwarePWMMultiplePins(t *testing.T) {
 		test.That(t, err, test.ShouldBeNil)
 	}
 
-	test.That(t, waitForCount(worker, numPins, time.Second), test.ShouldBeTrue)
+	test.That(t, waitForCount(worker, numPins), test.ShouldBeTrue)
 
 	time.Sleep(testDuration)
 
 	worker.Stop()
 
-	for i := 0; i < numPins; i++ {
+	for i := range numPins {
 		pin := fakePins[i]
 		events := collector.getEvents(pin.pinNumber)
 
-		//t.Logf("Pin %d: Collected %d events over %v", pin.pinNumber, len(events), testDuration)
+		// t.Logf("Pin %d: Collected %d events over %v", pin.pinNumber, len(events), testDuration)
 
 		expectedToggles := int(testDuration.Seconds() * float64(pin.freqHz) * 2)
 		test.That(t, len(events), test.ShouldBeGreaterThanOrEqualTo, expectedToggles-50) // Allow some margin
@@ -325,7 +319,7 @@ func TestSoftwarePWMMultiplePins(t *testing.T) {
 
 		measuredFreq, measuredDuty := collector.calcFreqAndDutyCycle(pin.pinNumber)
 
-		//t.Logf("Pin %d: Expected freq=%d Hz, duty=%.2f%%; Measured freq=%.2f Hz, duty=%.2f%%",
+		// t.Logf("Pin %d: Expected freq=%d Hz, duty=%.2f%%; Measured freq=%.2f Hz, duty=%.2f%%",
 		//	pin.pinNumber, pin.freqHz, pin.dutyCyclePct*100, measuredFreq, measuredDuty*100)
 
 		test.That(t, measuredFreq, test.ShouldBeBetween, float64(pin.freqHz)*(1-tolerance), float64(pin.freqHz)*(1+tolerance))

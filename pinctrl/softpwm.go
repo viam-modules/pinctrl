@@ -22,7 +22,7 @@ const (
 	opRemovePin
 )
 
-// pwmOp represents an operation to be processed by the worker
+// pwmOp represents an operation to be processed by the worker.
 type pwmOp struct {
 	opType       pwmOpType
 	pin          board.GPIOPin
@@ -93,7 +93,7 @@ func (p *softPWMPin) toggle(ctx context.Context) error {
 }
 
 // softwarePWMWorker manages all software PWM pins with a single goroutine.
-// fields are read and written from the worker so there is no need for a mutex
+// Fields are read and written from the worker so there is no need for a mutex.
 type softwarePWMWorker struct {
 	opChan chan *pwmOp
 	count  atomic.Int32
@@ -171,14 +171,10 @@ func (w *softwarePWMWorker) loop(ctx context.Context) {
 func (w *softwarePWMWorker) processOp(op *pwmOp) {
 	switch op.opType {
 	case opAddPin:
-		if err := w.addPinInternal(op.pin, op.freqHz, op.dutyCyclePct); err != nil {
-			w.logger.Errorf("software pwm - couldn't add pin %v", err)
-		}
-	case opRemovePin:
-		if err := w.removePinInternal(op.pin); err != nil {
-			w.logger.Errorf("software pwm - couldn't remove pin %v", err)
-		}
+		w.addPinInternal(op.pin, op.freqHz, op.dutyCyclePct)
 
+	case opRemovePin:
+		w.removePinInternal(op.pin)
 	}
 }
 
@@ -200,7 +196,7 @@ func (w *softwarePWMWorker) repositionElement(elem *list.Element, newDeadline ti
 	}
 }
 
-func (w *softwarePWMWorker) addPinInternal(pin board.GPIOPin, freqHz float64, dutyCyclePct float64) error {
+func (w *softwarePWMWorker) addPinInternal(pin board.GPIOPin, freqHz, dutyCyclePct float64) {
 	for e := w.pins.Front(); e != nil; e = e.Next() {
 		p := e.Value.(*softPWMPin)
 		if p.pin == pin {
@@ -208,7 +204,7 @@ func (w *softwarePWMWorker) addPinInternal(pin board.GPIOPin, freqHz float64, du
 			p.freqHz = freqHz
 			p.dutyCyclePct = dutyCyclePct
 			p.calculateTimes()
-			return nil
+			return
 		}
 	}
 
@@ -234,14 +230,12 @@ func (w *softwarePWMWorker) addPinInternal(pin board.GPIOPin, freqHz float64, du
 			}
 		}
 		w.pins.PushBack(pwmPin)
-
 	}()
 
 	w.count.Add(1)
-	return nil
 }
 
-func (w *softwarePWMWorker) removePinInternal(pin board.GPIOPin) error {
+func (w *softwarePWMWorker) removePinInternal(pin board.GPIOPin) {
 	for e := w.pins.Front(); e != nil; e = e.Next() {
 		p := e.Value.(*softPWMPin)
 		if p.pin == pin {
@@ -250,7 +244,6 @@ func (w *softwarePWMWorker) removePinInternal(pin board.GPIOPin) error {
 			break
 		}
 	}
-	return nil
 }
 
 // accurateSleep is intended to be a replacement for utils.SelectContextOrWait which wakes up
@@ -285,7 +278,7 @@ func accurateSleep(ctx context.Context, duration time.Duration) bool {
 }
 
 // AddPin adds a pin to be managed by software pwm worker.
-func (w *softwarePWMWorker) AddPin(pin board.GPIOPin, freqHz float64, dutyCyclePct float64) error {
+func (w *softwarePWMWorker) AddPin(pin board.GPIOPin, freqHz, dutyCyclePct float64) error {
 	if pin == nil {
 		return errors.New("pin cannot be nil")
 	}
@@ -331,7 +324,7 @@ func (w *softwarePWMWorker) Clear() {
 	func() {
 		for {
 			select {
-			case _ = <-w.opChan:
+			case <-w.opChan:
 				continue
 			default:
 				return
