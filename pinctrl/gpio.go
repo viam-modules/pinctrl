@@ -194,6 +194,7 @@ func (pin *GPIOPin) setupPWM() error {
 			if err := pin.pwmWorker.RemovePin(pin); err != nil {
 				return err
 			}
+			return nil
 		}
 		if pin.hwPwm != nil {
 			return pin.hwPwm.Close()
