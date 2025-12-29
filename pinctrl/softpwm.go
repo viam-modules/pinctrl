@@ -153,7 +153,7 @@ func (w *softwarePWMWorker) loop(ctx context.Context) {
 				}
 				if err := headPin.toggle(ctx); err != nil {
 					// this may be very spammy maybe we should ignore?
-					w.logger.Errorf("error %v when changing the state of a pin")
+					w.logger.Errorf("error %v when changing the state of a pin", err)
 				}
 				w.repositionElement(headElem, headPin.deadline)
 			}
@@ -213,13 +213,8 @@ func (w *softwarePWMWorker) addPinInternal(pin board.GPIOPin, freqHz, dutyCycleP
 		freqHz:       freqHz,
 		dutyCyclePct: dutyCyclePct,
 	}
-
-	period := time.Duration(float64(time.Second) / freqHz)
-	pwmPin.timeOn = time.Duration(float64(period) * dutyCyclePct)
-	pwmPin.timeOff = period - pwmPin.timeOn
-
-	pwmPin.deadline = time.Now()
 	pwmPin.isOn = false
+	pwmPin.calculateTimes()
 
 	func() {
 		for e := w.pins.Front(); e != nil; e = e.Next() {
