@@ -22,6 +22,9 @@ const (
 	opRemovePin
 )
 
+// maxPendingOps is the number of pin operation (change in configuration) that can pend. In theory 32 can never be exceeded
+const maxPendingOps = 32
+
 // pwmOp represents an operation to be processed by the worker.
 type pwmOp struct {
 	opType       pwmOpType
@@ -104,7 +107,7 @@ type softwarePWMWorker struct {
 
 func newSoftwarePWMWorker(log logging.Logger) *softwarePWMWorker {
 	w := &softwarePWMWorker{
-		opChan: make(chan *pwmOp, 32),
+		opChan: make(chan *pwmOp, maxPendingOps),
 		pins:   list.New(),
 		logger: log,
 	}
