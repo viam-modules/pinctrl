@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/mkch/gpio"
 	"go.viam.com/rdk/components/board"
@@ -20,7 +19,7 @@ const noPin = 0xFFFFFFFF // noPin is the uint32 version of -1. A pin with this o
 
 // GPIOPin is the struct defining a GPIOPin that satisfies a board.GPIOPin.
 type GPIOPin struct {
-	softwarePWMWorkers *utils.StoppableWorkers
+	pwmWorker *softwarePWMWorker // shared worker for software PWM
 
 	// These values should both be considered immutable.
 	devicePath string
@@ -32,6 +31,7 @@ type GPIOPin struct {
 	hwPwm           *pwmDevice // Defined in hw_pwm.go, will be nil for pins that don't support it.
 	pwmFreqHz       uint
 	pwmDutyCyclePct float64
+	usingSoftPWM    bool // tracks if this pin is currently using software PWM
 
 	mu     sync.Mutex
 	logger logging.Logger
@@ -46,6 +46,7 @@ func (ctrl *Pinctrl) CreateGpioPin(mapping gl.GPIOBoardMapping, defaultPWMFreqHz
 		offset:     uint32(mapping.GPIO),
 		logger:     ctrl.logger,
 		pwmFreqHz:  defaultPWMFreqHz,
+		pwmWorker:  ctrl.pwmWorker,
 	}
 	if mapping.HWPWMSupported {
 		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, mapping.GPIO, ctrl.logger, &ctrl.VPage)
@@ -129,12 +130,6 @@ func (pin *GPIOPin) Set(ctx context.Context, isHigh bool,
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
-	// Shut down any software PWM loop that might be running.
-	if pin.softwarePWMWorkers != nil {
-		pin.softwarePWMWorkers.Stop()
-		pin.softwarePWMWorkers = nil
-	}
-
 	return pin.setInternal(isHigh)
 }
 
@@ -189,35 +184,33 @@ func (pin *GPIOPin) Get(
 	return (value != 0), nil
 }
 
-// Lock the mutex before calling this! We'll spin up a background goroutine to create a PWM signal
-// in software, if we're supposed to and one isn't already running.
-func (pin *GPIOPin) startSoftwarePWM() error {
+// Lock the mutex before calling this! We'll add the pin to the shared software PWM worker
+// if we need software PWM.
+func (pin *GPIOPin) setupPWM() error {
 	if pin.pwmDutyCyclePct == 0 || pin.pwmFreqHz == 0 {
-		// We don't have both parameters set up. Stop any PWM loop we might have started previously.
-		if pin.softwarePWMWorkers != nil {
-			pin.softwarePWMWorkers.Stop()
-			pin.softwarePWMWorkers = nil
+		// Remove from software PWM if needed.
+		if pin.usingSoftPWM && pin.pwmWorker != nil {
+			pin.usingSoftPWM = false
+			if err := pin.pwmWorker.RemovePin(pin); err != nil {
+				return err
+			}
+			return nil
 		}
 		if pin.hwPwm != nil {
 			return pin.hwPwm.Close()
 		}
-		// If we used to have a software PWM loop, we might have stopped the loop while the pin was
-		// on. Remember to turn it off!
-		return pin.setInternal(false)
 	}
 
 	// Otherwise, we need to output a PWM signal.
-	if pin.hwPwm != nil {
+	if pin.hwPwm != nil && !pin.usingSoftPWM {
 		if pin.pwmFreqHz > 1 {
 			if err := pin.closeGpioFd(); err != nil {
 				return err
 			}
-			// Shut down any software PWM loop that might be running.
-			if pin.softwarePWMWorkers != nil {
-				pin.softwarePWMWorkers.Stop()
-				pin.softwarePWMWorkers = nil
+			if err := pin.hwPwm.SetPwm(pin.pwmFreqHz, pin.pwmDutyCyclePct); err != nil {
+				pin.logger.Warnf("failed to setup hardware PWM on pin cause: %v - default to software pwm", err)
 			}
-			return pin.hwPwm.SetPwm(pin.pwmFreqHz, pin.pwmDutyCyclePct)
+			// fall through if hardware pwm cannot be setup
 		}
 		// Although this pin has hardware PWM support, many PWM chips cannot output signals at
 		// frequencies this low. Stop any hardware PWM, and fall through to using a software PWM
@@ -229,94 +222,15 @@ func (pin *GPIOPin) startSoftwarePWM() error {
 	// If we get here, we need a software loop to drive the PWM signal, either because this pin
 	// doesn't have hardware support or because we want to drive it at such a low frequency that
 	// the hardware chip can't do it.
-	if pin.softwarePWMWorkers != nil {
-		// We already have a software PWM loop running. It will pick up the changes on its own.
-		return nil
+	if pin.pwmWorker == nil {
+		return errors.New("no software PWM worker available")
 	}
 
-	pin.softwarePWMWorkers = utils.NewBackgroundStoppableWorkers(pin.softwarePwmLoop)
+	if err := pin.pwmWorker.AddPin(pin, float64(pin.pwmFreqHz), pin.pwmDutyCyclePct); err != nil {
+		return err
+	}
+	pin.usingSoftPWM = true
 	return nil
-}
-
-// accurateSleep is intended to be a replacement for utils.SelectContextOrWait which wakes up
-// closer to when it's supposed to. We return whether the context is still valid (not yet
-// cancelled).
-func accurateSleep(ctx context.Context, duration time.Duration) bool {
-	// If we use utils.SelectContextOrWait(), we will wake up sometime after when we're supposed
-	// to, which can be hundreds of microseconds later (because the process scheduler in the OS only
-	// schedules things every millisecond or two). For use cases like a web server responding to a
-	// query, that's fine. but when outputting a PWM signal, hundreds of microseconds can be a big
-	// deal. To avoid this, we sleep for less time than we're supposed to, and then busy-wait until
-	// the right time. Inspiration for this approach was taken from
-	// https://blog.bearcats.nl/accurate-sleep-function/
-	// On a raspberry pi 4, naively calling utils.SelectContextOrWait tended to have an error of
-	// about 140-300 microseconds, while this version had an error of 0.3-0.6 microseconds.
-	startTime := time.Now()
-	maxBusyWaitTime := 1500 * time.Microsecond
-	if duration > maxBusyWaitTime {
-		shorterDuration := duration - maxBusyWaitTime
-		if !utils.SelectContextOrWait(ctx, shorterDuration) {
-			return false
-		}
-	}
-
-	for time.Since(startTime) < duration {
-		if err := ctx.Err(); err != nil {
-			return false
-		}
-		// Otherwise, busy-wait some more
-	}
-	return true
-}
-
-// We turn the pin either on or off, and then wait until it's time to turn it off or on again (or
-// until we're supposed to shut down). We return whether we should continue the software PWM cycle.
-func (pin *GPIOPin) halfPwmCycle(ctx context.Context, shouldBeOn bool) bool {
-	// Make local copies of these, then release the mutex
-	var dutyCycle float64
-	var freqHz uint
-
-	// We encapsulate some of this code into its own function, to ensure that the mutex is unlocked
-	// at the appropriate time even if we return early.
-	shouldContinue := func() bool {
-		pin.mu.Lock()
-		defer pin.mu.Unlock()
-		// Before we modify the pin, check if we should stop running
-		if ctx.Err() != nil {
-			return false
-		}
-
-		dutyCycle = pin.pwmDutyCyclePct
-		freqHz = pin.pwmFreqHz
-
-		// If there's an error turning the pin on or off, don't stop the whole loop. Hopefully we
-		// can toggle it next time. However, log any errors so that we notice if there are a bunch
-		// of them.
-		utils.UncheckedErrorFunc(func() error { return pin.setInternal(shouldBeOn) })
-		return true
-	}()
-
-	if !shouldContinue {
-		return false
-	}
-
-	if !shouldBeOn {
-		dutyCycle = 1 - dutyCycle
-	}
-	duration := time.Duration(float64(time.Second) * dutyCycle / float64(freqHz))
-
-	return accurateSleep(ctx, duration)
-}
-
-func (pin *GPIOPin) softwarePwmLoop(ctx context.Context) {
-	for {
-		if !pin.halfPwmCycle(ctx, true) {
-			return
-		}
-		if !pin.halfPwmCycle(ctx, false) {
-			return
-		}
-	}
 }
 
 // PWM implements PWM from the board.GPIOPin interface.
@@ -338,7 +252,7 @@ func (pin *GPIOPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[
 	}
 
 	pin.pwmDutyCyclePct = dutyCyclePct
-	return pin.startSoftwarePWM()
+	return pin.setupPWM()
 }
 
 // PWMFreq implements PWMFreq from the board.GPIOPin interface.
@@ -359,16 +273,18 @@ func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[strin
 	}
 
 	pin.pwmFreqHz = freqHz
-	return pin.startSoftwarePWM()
+	return pin.setupPWM()
 }
 
 // Close closes the GPIOPin and any pwm related features on the pin.
 func (pin *GPIOPin) Close() error {
-	// stop any software pwm running on the pin
-	// the software PWM loop locks the pin, so we need to stop the worker before locking the pin to close it
-	if pin.softwarePWMWorkers != nil {
-		pin.softwarePWMWorkers.Stop()
-		pin.softwarePWMWorkers = nil
+	// Remove this pin from software PWM if it's running
+	if pin.usingSoftPWM && pin.pwmWorker != nil {
+		if err := pin.pwmWorker.RemovePin(pin); err != nil {
+			// this error might be trigger if the software pwm worker is stopped before pins are destroyed
+			pin.logger.Warnf("error while removing the pin from the software pwm worker : %v", err)
+		}
+		pin.usingSoftPWM = false
 	}
 
 	// We keep the gpio.Line object open indefinitely, so it holds its state for as long as this
