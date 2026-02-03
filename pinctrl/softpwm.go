@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.viam.com/rdk/components/board"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/utils"
 )
@@ -22,13 +21,13 @@ const (
 	opRemovePin
 )
 
-// maxPendingOps is the number of pin operation (change in configuration) that can pend. In theory 32 can never be exceeded
+// maxPendingOps is the number of pin operation (change in configuration) that can pend. In theory 32 can never be exceeded.
 const maxPendingOps = 32
 
 // pwmOp represents an operation to be processed by the worker.
 type pwmOp struct {
 	opType       pwmOpType
-	pin          board.GPIOPin
+	pin          *GPIOPin
 	freqHz       float64
 	dutyCyclePct float64
 }
@@ -38,7 +37,7 @@ type softPWMPin struct {
 	deadline     time.Time
 	dutyCyclePct float64
 	freqHz       float64
-	pin          board.GPIOPin
+	pin          *GPIOPin
 	timeOn       time.Duration
 	timeOff      time.Duration
 	isOn         bool
@@ -79,11 +78,19 @@ func (p *softPWMPin) calculateTimes() {
 	}
 }
 
-func (p *softPWMPin) toggle(ctx context.Context) error {
-	now := time.Now()
+func (p *softPWMPin) toggle() error {
 	newState := !p.isOn
 
-	err := p.pin.Set(ctx, newState, nil)
+	p.pin.mu.Lock()
+
+	if !p.pin.usingSoftPWM {
+		p.pin.mu.Unlock()
+		return nil
+	}
+	err := p.pin.setInternal(newState)
+	p.pin.mu.Unlock()
+	now := time.Now()
+
 	// regardless of the error returned update the deadline and capture the new state
 	p.isOn = newState
 	if newState {
@@ -137,30 +144,34 @@ func (w *softwarePWMWorker) loop(ctx context.Context) {
 				}
 			}
 		}()
-		// if our context has been canceled return early
-		if err := ctx.Err(); err != nil {
-			return
-		}
+
 		// Process pins and get sleep duration
-		sleepDuration := func() time.Duration {
+		sleepDuration, err := func() (time.Duration, error) {
 			for {
+				// if our context has been canceled return early
+				if err := ctx.Err(); err != nil {
+					return 0, err
+				}
 				headElem := w.pins.Front()
 				if headElem == nil {
-					return 0
+					return 0, nil
 				}
 				headPin := headElem.Value.(*softPWMPin)
 				now := time.Now()
 				// if the deadline is in the future let's sleep a bit
 				if now.Before(headPin.deadline) {
-					return headPin.deadline.Sub(now)
+					return headPin.deadline.Sub(now), nil
 				}
-				if err := headPin.toggle(ctx); err != nil {
+				if err := headPin.toggle(); err != nil {
 					// this may be very spammy maybe we should ignore?
 					w.logger.Errorf("error %v when changing the state of a pin", err)
 				}
 				w.repositionElement(headElem, headPin.deadline)
 			}
 		}()
+		if err != nil {
+			return
+		}
 		if sleepDuration == 0 {
 			continue
 		}
@@ -199,7 +210,7 @@ func (w *softwarePWMWorker) repositionElement(elem *list.Element, newDeadline ti
 	}
 }
 
-func (w *softwarePWMWorker) addPinInternal(pin board.GPIOPin, freqHz, dutyCyclePct float64) {
+func (w *softwarePWMWorker) addPinInternal(pin *GPIOPin, freqHz, dutyCyclePct float64) {
 	for e := w.pins.Front(); e != nil; e = e.Next() {
 		p := e.Value.(*softPWMPin)
 		if p.pin == pin {
@@ -233,7 +244,7 @@ func (w *softwarePWMWorker) addPinInternal(pin board.GPIOPin, freqHz, dutyCycleP
 	w.count.Add(1)
 }
 
-func (w *softwarePWMWorker) removePinInternal(pin board.GPIOPin) {
+func (w *softwarePWMWorker) removePinInternal(pin *GPIOPin) {
 	for e := w.pins.Front(); e != nil; e = e.Next() {
 		p := e.Value.(*softPWMPin)
 		if p.pin == pin {
@@ -276,7 +287,7 @@ func accurateSleep(ctx context.Context, duration time.Duration) bool {
 }
 
 // AddPin adds a pin to be managed by software pwm worker.
-func (w *softwarePWMWorker) AddPin(pin board.GPIOPin, freqHz, dutyCyclePct float64) error {
+func (w *softwarePWMWorker) AddPin(pin *GPIOPin, freqHz, dutyCyclePct float64) error {
 	if pin == nil {
 		return errors.New("pin cannot be nil")
 	}
@@ -299,7 +310,7 @@ func (w *softwarePWMWorker) AddPin(pin board.GPIOPin, freqHz, dutyCyclePct float
 }
 
 // RemovePin removes a pin from software pwm worker.
-func (w *softwarePWMWorker) RemovePin(pin board.GPIOPin) error {
+func (w *softwarePWMWorker) RemovePin(pin *GPIOPin) error {
 	if pin == nil {
 		return errors.New("pin cannot be nil")
 	}
