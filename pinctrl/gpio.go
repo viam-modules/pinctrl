@@ -42,11 +42,12 @@ type GPIOPin struct {
 // Allows users to define a pwm using just SetPWM calls when testing, if the default frequency is set to a nonzero value.
 func (ctrl *Pinctrl) CreateGpioPin(mapping gl.GPIOBoardMapping, defaultPWMFreqHz uint) *GPIOPin {
 	pin := GPIOPin{
-		devicePath: mapping.GPIOChipDev,
-		offset:     uint32(mapping.GPIO),
-		logger:     ctrl.logger,
-		pwmFreqHz:  defaultPWMFreqHz,
-		pwmWorker:  ctrl.pwmWorker,
+		devicePath:   mapping.GPIOChipDev,
+		offset:       uint32(mapping.GPIO),
+		logger:       ctrl.logger,
+		pwmFreqHz:    defaultPWMFreqHz,
+		pwmWorker:    ctrl.pwmWorker,
+		usingSoftPWM: false,
 	}
 	if mapping.HWPWMSupported {
 		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, mapping.GPIO, ctrl.logger, &ctrl.VPage)
@@ -130,6 +131,16 @@ func (pin *GPIOPin) Set(ctx context.Context, isHigh bool,
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
+	// Cancel software PWM if active
+	if pin.usingSoftPWM && pin.pwmWorker != nil {
+		pin.usingSoftPWM = false
+		pin.pwmDutyCyclePct = 0
+		pin.pwmFreqHz = 0
+		if err := pin.pwmWorker.RemovePin(pin); err != nil {
+			pin.logger.Warnf("error removing pin from software PWM: %v", err)
+		}
+	}
+
 	return pin.setInternal(isHigh)
 }
 
@@ -194,11 +205,13 @@ func (pin *GPIOPin) setupPWM() error {
 			if err := pin.pwmWorker.RemovePin(pin); err != nil {
 				return err
 			}
-			return nil
+			// default back to low
+			return pin.setInternal(false)
 		}
 		if pin.hwPwm != nil {
 			return pin.hwPwm.Close()
 		}
+		return nil
 	}
 
 	// Otherwise, we need to output a PWM signal.
@@ -209,6 +222,8 @@ func (pin *GPIOPin) setupPWM() error {
 			}
 			if err := pin.hwPwm.SetPwm(pin.pwmFreqHz, pin.pwmDutyCyclePct); err != nil {
 				pin.logger.Warnf("failed to setup hardware PWM on pin cause: %v - default to software pwm", err)
+			} else {
+				return nil
 			}
 			// fall through if hardware pwm cannot be setup
 		}
@@ -278,20 +293,20 @@ func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[strin
 
 // Close closes the GPIOPin and any pwm related features on the pin.
 func (pin *GPIOPin) Close() error {
-	// Remove this pin from software PWM if it's running
-	if pin.usingSoftPWM && pin.pwmWorker != nil {
-		if err := pin.pwmWorker.RemovePin(pin); err != nil {
-			// this error might be trigger if the software pwm worker is stopped before pins are destroyed
-			pin.logger.Warnf("error while removing the pin from the software pwm worker : %v", err)
-		}
-		pin.usingSoftPWM = false
-	}
-
 	// We keep the gpio.Line object open indefinitely, so it holds its state for as long as this
 	// struct is around. This function is a way to close it when we're about to go out of scope, so
 	// we don't leak file descriptors.
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
+
+	// Remove this pin from software PWM if it's running
+	if pin.usingSoftPWM && pin.pwmWorker != nil {
+		pin.usingSoftPWM = false
+		if err := pin.pwmWorker.RemovePin(pin); err != nil {
+			// this error might be trigger if the software pwm worker is stopped before pins are destroyed
+			pin.logger.Warnf("error while removing the pin from the software pwm worker : %v", err)
+		}
+	}
 
 	if pin.hwPwm != nil {
 		if err := pin.hwPwm.Close(); err != nil {
