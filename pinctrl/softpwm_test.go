@@ -25,6 +25,7 @@ func createTestPinctrl(t *testing.T) *Pinctrl {
 	}
 	ctrl, err := SetupPinControl(cfg, logger)
 	test.That(t, err, test.ShouldBeNil)
+
 	return &ctrl
 }
 
@@ -34,6 +35,7 @@ func createTestPin(ctrl *Pinctrl, pinNum int) *GPIOPin {
 		GPIOChipDev: "/dev/gpiochip4",
 		GPIO:        pinNum,
 	}
+
 	return ctrl.CreateGpioPin(mapping, 0)
 }
 
@@ -43,13 +45,16 @@ func waitForCount(worker *softwarePWMWorker, expected int32) bool {
 		if worker.Count() == expected {
 			return true
 		}
+
 		time.Sleep(10 * time.Millisecond)
 	}
+
 	return false
 }
 
 func TestSoftwarePWMWorkerAddRemove(t *testing.T) {
 	ctx := context.Background()
+
 	ctrl := createTestPinctrl(t)
 	defer ctrl.Close()
 
@@ -116,14 +121,18 @@ func TestSoftPWMPinTimingCalculations(t *testing.T) {
 
 	pwmPin.isOn = false
 	before := time.Now()
+
 	pwmPin.calculateNextDeadline()
+
 	after := time.Now()
 
 	test.That(t, pwmPin.isOn, test.ShouldBeTrue)
 	test.That(t, pwmPin.deadline, test.ShouldHappenBetween, before.Add(pwmPin.timeOff), after.Add(pwmPin.timeOff))
 
 	before = time.Now()
+
 	pwmPin.calculateNextDeadline()
+
 	after = time.Now()
 
 	test.That(t, pwmPin.isOn, test.ShouldBeFalse)
@@ -132,6 +141,7 @@ func TestSoftPWMPinTimingCalculations(t *testing.T) {
 
 func TestSetCancelsSoftwarePWM(t *testing.T) {
 	ctx := context.Background()
+
 	ctrl := createTestPinctrl(t)
 	defer ctrl.Close()
 
@@ -183,6 +193,7 @@ func TestCloseRemovesPinFromPWM(t *testing.T) {
 
 func TestConcurrentSetAndPWMWorker(t *testing.T) {
 	ctx := context.Background()
+
 	ctrl := createTestPinctrl(t)
 	defer ctrl.Close()
 

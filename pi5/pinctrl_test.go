@@ -39,6 +39,7 @@ func TestNewBoard(t *testing.T) {
 	// Test Creations of Boards
 	newB, err := newBoard(ctx, config, testBoardMappings, logger, true)
 	test.That(t, err, test.ShouldBeNil)
+
 	test.That(t, newB, test.ShouldNotBeNil)
 	defer newB.Close(ctx)
 

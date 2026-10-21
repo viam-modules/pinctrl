@@ -12,5 +12,5 @@ import (
 )
 
 func main() {
-	module.ModularMain(resource.APIModel{board.API, pi5.Model})
+	module.ModularMain(resource.APIModel{API: board.API, Model: pi5.Model})
 }

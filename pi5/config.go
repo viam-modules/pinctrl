@@ -19,17 +19,20 @@ type PullConfig struct {
 }
 
 // Validate validates the config.
-func (cfg *Config) Validate(path string) ([]string, error) {
+func (cfg *Config) Validate(path string) ([]string, []string, error) {
 	for _, c := range cfg.Pulls {
 		if c.Pin == "" {
-			return []string{}, resource.NewConfigValidationFieldRequiredError(path, "pin")
+			return []string{}, []string{}, resource.NewConfigValidationFieldRequiredError(path, "pin")
 		}
+
 		if c.Pull == "" {
-			return []string{}, resource.NewConfigValidationFieldRequiredError(path, "pull")
+			return []string{}, []string{}, resource.NewConfigValidationFieldRequiredError(path, "pull")
 		}
-		if !(c.Pull == "up" || c.Pull == "down" || c.Pull == "none") {
-			return []string{}, errors.New("supported pull config attributes are up, down, and none")
+
+		if c.Pull != "up" && c.Pull != "down" && c.Pull != "none" {
+			return []string{}, []string{}, errors.New("supported pull config attributes are up, down, and none")
 		}
 	}
-	return []string{}, nil
+
+	return []string{}, []string{}, nil
 }

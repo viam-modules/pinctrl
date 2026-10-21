@@ -54,6 +54,7 @@ func (cfg *Config) getBaseNodePath() string {
 	if cfg.TestPath != "" {
 		return cfg.TestPath + dtBase
 	}
+
 	return dtBase
 }
 
@@ -74,6 +75,7 @@ func cleanFilePath(nodePath string) string {
 	re := regexp.MustCompile(`[\x00-\x1F]`) // gets rid of Null Chars & Non Printable Chars in File Path
 	nodePath = re.ReplaceAllString(nodePath, "")
 	nodePath = filepath.Clean(nodePath)
+
 	return nodePath
 }
 
@@ -88,6 +90,7 @@ func findPathFromAlias(nodeName, dtBaseNodePath string) (string, error) {
 
 	// convert readFile output from bytes -> string format
 	nodePath := string(nodePathBytes)
+
 	return nodePath, err
 }
 
@@ -122,6 +125,7 @@ func parseCells(numCells uint32, byteContents *[]byte) (uint64, error) {
 	}
 
 	*byteContents = (*byteContents)[(4 * numCells):] // flush the bytes already parsed out of the array
+
 	return parsedValue, nil
 }
 
@@ -141,6 +145,7 @@ func getNumAddrSizeCells(parentNodePath string) (uint32, uint32, error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("trouble getting addr cells info for %s: %w", parentNodePath, err)
 	}
+
 	numPAddrCells := binary.BigEndian.Uint32(npaByteContents[:4])
 
 	// get #size - cells info for child node using the parent Node
@@ -177,6 +182,7 @@ func getRegAddr(childNodePath string, numPAddrCells uint32) (uint64, error) {
 func getRangesAddr(childNodePath string, numCAddrCells, numPAddrCells, numAddrSpaceCells uint32) ([]rangeInfo, error) {
 	childNodePath += "/ranges"
 	childNodePath = cleanFilePath(childNodePath)
+
 	var addrRanges []rangeInfo
 
 	//nolint:gosec
@@ -193,10 +199,12 @@ func getRangesAddr(childNodePath string, numCAddrCells, numPAddrCells, numAddrSp
 		if err != nil {
 			return []rangeInfo{}, errors.New("error getting child address")
 		}
+
 		parentAddr, err := parseCells(numPAddrCells, &rangeByteContents)
 		if err != nil {
 			return []rangeInfo{}, errors.New("error getting parent address")
 		}
+
 		addrSpaceSize, err := parseCells(numAddrSpaceCells, &rangeByteContents)
 		if err != nil {
 			return []rangeInfo{}, errors.New("error getting address space size")
@@ -225,6 +233,7 @@ func setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath string, physAddress 
 	// Normal Case: We are not at the root of the device tree.
 	// We must continue mapping our child addr (from the previous call) to this parent's addr space.
 	parentNodePath := filepath.Dir(currNodePath)
+
 	numPAddrCells, numAddrSpaceCells, err := getNumAddrSizeCells(parentNodePath)
 	if err != nil {
 		return invalidAddr, err
@@ -250,6 +259,7 @@ func setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath string, physAddress 
 			if addrRange.childAddr <= physAddress && physAddress <= addrRange.childAddr+addrRange.addrSpaceSize {
 				physAddress -= addrRange.childAddr  // get the offset between the address and child base address
 				physAddress += addrRange.parentAddr // now address has been mapped into parent space.
+
 				break
 			}
 		}
@@ -257,6 +267,7 @@ func setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath string, physAddress 
 
 	numCAddrCells = numPAddrCells
 	currNodePath = parentNodePath
+
 	return setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath, physAddress, numCAddrCells)
 }
 
@@ -264,6 +275,7 @@ func setGPIONodePhysAddrHelper(currNodePath, dtBaseNodePath string, physAddress 
 // and 'ranges' property of its parents to map the child's physical address into the dev/gpiomem space.
 func setGPIONodePhysAddr(nodePath, dtBaseNodePath string) (uint64, error) {
 	var err error
+
 	currNodePath := dtBaseNodePath + nodePath // example on pi5: /proc/device-tree/axi/pcie@120000/rp1/gpio@d0000
 	invalidAddr := uint64(math.NaN())
 	numCAddrCells := uint32(0)
@@ -307,6 +319,7 @@ func createGPIOVPage(memPath string, chipSize, physAddr uint64, useGPIOMem bool)
 	*/
 
 	var offset int64 // default 0 offset
+
 	lenMapping := int(chipSize)
 	// adjust the map parameters to handle the misalignment
 	if !useGPIOMem {
@@ -337,12 +350,14 @@ func createGPIOVPage(memPath string, chipSize, physAddr uint64, useGPIOMem bool)
 // Implementers will need to contsruct a PinctrlConfig to use this.
 func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 	var err error
+
 	physAddr := uint64(0)
 	// This is not generalizeable; determine if there is a way to retrieve this from the pi / config / mapping information instead.
 
 	// If we are running tests, we need to read files/folders from our module's local sample device tree.
 	// This is located in mock-device-tree
 	testingMode := cfg.TestPath != ""
+
 	dtBaseNodePath := cfg.getBaseNodePath()
 	if cfg.UseGPIOMem {
 		nodePath := cfg.GPIOChipPath
@@ -373,6 +388,7 @@ func SetupPinControl(cfg Config, logger logging.Logger) (Pinctrl, error) {
 		logger.Errorf("error creating virtual page from GPIO physical address")
 		return Pinctrl{}, err
 	}
+
 	ctrl.logger = logger
 	ctrl.Cfg = cfg
 	ctrl.pwmWorker = newSoftwarePWMWorker(logger)
@@ -388,12 +404,15 @@ func (ctrl *Pinctrl) Close() error {
 	}
 
 	if ctrl.VPage != nil {
-		if err := ctrl.VPage.Unmap(); err != nil {
+		err := ctrl.VPage.Unmap()
+		if err != nil {
 			return fmt.Errorf("error during unmap: %w", err)
 		}
 	}
+
 	if ctrl.MemFile != nil {
-		if err := ctrl.MemFile.Close(); err != nil {
+		err := ctrl.MemFile.Close()
+		if err != nil {
 			return fmt.Errorf("error during memFile closing: %w", err)
 		}
 	}

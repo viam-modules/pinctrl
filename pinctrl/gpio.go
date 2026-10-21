@@ -52,6 +52,7 @@ func (ctrl *Pinctrl) CreateGpioPin(mapping gl.GPIOBoardMapping, defaultPWMFreqHz
 	if mapping.HWPWMSupported {
 		pin.hwPwm = newPwmDevice(mapping.PWMSysFsDir, mapping.PWMID, mapping.GPIO, ctrl.logger, &ctrl.VPage)
 	}
+
 	return &pin
 }
 
@@ -67,9 +68,11 @@ func (pin *GPIOPin) openGpioFd(isInput bool) error {
 	if isInput != pin.isInput {
 		// We're switching from an input pin to an output one or vice versa. Close the line and
 		// repoen in the other mode.
-		if err := pin.closeGpioFd(); err != nil {
+		err := pin.closeGpioFd()
+		if err != nil {
 			return err // Already wrapped
 		}
+
 		pin.isInput = isInput
 	}
 
@@ -80,7 +83,8 @@ func (pin *GPIOPin) openGpioFd(isInput bool) error {
 	if pin.hwPwm != nil {
 		// If the pin is currently used by the hardware PWM chip, shut that down before we can open
 		// it for basic GPIO use.
-		if err := pin.hwPwm.Close(); err != nil {
+		err := pin.hwPwm.Close()
+		if err != nil {
 			return pin.wrapError(err)
 		}
 	}
@@ -109,7 +113,9 @@ func (pin *GPIOPin) openGpioFd(isInput bool) error {
 	if err != nil {
 		return pin.wrapError(err)
 	}
+
 	pin.line = line
+
 	return nil
 }
 
@@ -117,16 +123,20 @@ func (pin *GPIOPin) closeGpioFd() error {
 	if pin.line == nil {
 		return nil // The pin is already closed.
 	}
-	if err := pin.line.Close(); err != nil {
+
+	err := pin.line.Close()
+	if err != nil {
 		return pin.wrapError(err)
 	}
+
 	pin.line = nil
+
 	return nil
 }
 
 // Set implements Set from the board.GPIOPin interface.
 func (pin *GPIOPin) Set(ctx context.Context, isHigh bool,
-	extra map[string]interface{},
+	extra map[string]any,
 ) (err error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
@@ -135,8 +145,11 @@ func (pin *GPIOPin) Set(ctx context.Context, isHigh bool,
 	if pin.usingSoftPWM && pin.pwmWorker != nil {
 		pin.usingSoftPWM = false
 		pin.pwmDutyCyclePct = 0
+
 		pin.pwmFreqHz = 0
-		if err := pin.pwmWorker.RemovePin(pin); err != nil {
+
+		err := pin.pwmWorker.RemovePin(pin)
+		if err != nil {
 			pin.logger.Warnf("error removing pin from software PWM: %v", err)
 		}
 	}
@@ -157,6 +170,7 @@ func (pin *GPIOPin) setInternal(isHigh bool) (err error) {
 	if err := pin.openGpioFd( /* isInput= */ false); err != nil {
 		return err
 	}
+
 	if pin.offset == noPin {
 		if isHigh {
 			return errors.New("cannot set non-GPIO pin high")
@@ -168,12 +182,13 @@ func (pin *GPIOPin) setInternal(isHigh bool) (err error) {
 	if err := pin.line.SetValue(value); err != nil {
 		return pin.wrapError(err)
 	}
+
 	return nil
 }
 
 // Get impments Get from the board.GPIOPin interface.
 func (pin *GPIOPin) Get(
-	ctx context.Context, extra map[string]interface{},
+	ctx context.Context, extra map[string]any,
 ) (result bool, err error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
@@ -202,25 +217,32 @@ func (pin *GPIOPin) setupPWM() error {
 		// Remove from software PWM if needed.
 		if pin.usingSoftPWM && pin.pwmWorker != nil {
 			pin.usingSoftPWM = false
-			if err := pin.pwmWorker.RemovePin(pin); err != nil {
+
+			err := pin.pwmWorker.RemovePin(pin)
+			if err != nil {
 				return err
 			}
 			// default back to low
 			return pin.setInternal(false)
 		}
+
 		if pin.hwPwm != nil {
 			return pin.hwPwm.Close()
 		}
+
 		return nil
 	}
 
 	// Otherwise, we need to output a PWM signal.
 	if pin.hwPwm != nil && !pin.usingSoftPWM {
 		if pin.pwmFreqHz > 1 {
-			if err := pin.closeGpioFd(); err != nil {
+			err := pin.closeGpioFd()
+			if err != nil {
 				return err
 			}
-			if err := pin.hwPwm.SetPwm(pin.pwmFreqHz, pin.pwmDutyCyclePct); err != nil {
+
+			err = pin.hwPwm.SetPwm(pin.pwmFreqHz, pin.pwmDutyCyclePct)
+			if err != nil {
 				pin.logger.Warnf("failed to setup hardware PWM on pin cause: %v - default to software pwm", err)
 			} else {
 				return nil
@@ -230,7 +252,8 @@ func (pin *GPIOPin) setupPWM() error {
 		// Although this pin has hardware PWM support, many PWM chips cannot output signals at
 		// frequencies this low. Stop any hardware PWM, and fall through to using a software PWM
 		// loop below.
-		if err := pin.hwPwm.Close(); err != nil {
+		err := pin.hwPwm.Close()
+		if err != nil {
 			return err
 		}
 	}
@@ -241,15 +264,18 @@ func (pin *GPIOPin) setupPWM() error {
 		return errors.New("no software PWM worker available")
 	}
 
-	if err := pin.pwmWorker.AddPin(pin, float64(pin.pwmFreqHz), pin.pwmDutyCyclePct); err != nil {
+	err := pin.pwmWorker.AddPin(pin, float64(pin.pwmFreqHz), pin.pwmDutyCyclePct)
+	if err != nil {
 		return err
 	}
+
 	pin.usingSoftPWM = true
+
 	return nil
 }
 
 // PWM implements PWM from the board.GPIOPin interface.
-func (pin *GPIOPin) PWM(ctx context.Context, extra map[string]interface{}) (float64, error) {
+func (pin *GPIOPin) PWM(ctx context.Context, extra map[string]any) (float64, error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
@@ -257,7 +283,7 @@ func (pin *GPIOPin) PWM(ctx context.Context, extra map[string]interface{}) (floa
 }
 
 // SetPWM implements SetPWM the board.GPIOPin interface.
-func (pin *GPIOPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[string]interface{}) error {
+func (pin *GPIOPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[string]any) error {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
@@ -267,11 +293,12 @@ func (pin *GPIOPin) SetPWM(ctx context.Context, dutyCyclePct float64, extra map[
 	}
 
 	pin.pwmDutyCyclePct = dutyCyclePct
+
 	return pin.setupPWM()
 }
 
 // PWMFreq implements PWMFreq from the board.GPIOPin interface.
-func (pin *GPIOPin) PWMFreq(ctx context.Context, extra map[string]interface{}) (uint, error) {
+func (pin *GPIOPin) PWMFreq(ctx context.Context, extra map[string]any) (uint, error) {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
@@ -279,7 +306,7 @@ func (pin *GPIOPin) PWMFreq(ctx context.Context, extra map[string]interface{}) (
 }
 
 // SetPWMFreq implements SetPWMFreq the board.GPIOPin interface.
-func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[string]interface{}) error {
+func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[string]any) error {
 	pin.mu.Lock()
 	defer pin.mu.Unlock()
 
@@ -288,6 +315,7 @@ func (pin *GPIOPin) SetPWMFreq(ctx context.Context, freqHz uint, extra map[strin
 	}
 
 	pin.pwmFreqHz = freqHz
+
 	return pin.setupPWM()
 }
 
@@ -302,14 +330,17 @@ func (pin *GPIOPin) Close() error {
 	// Remove this pin from software PWM if it's running
 	if pin.usingSoftPWM && pin.pwmWorker != nil {
 		pin.usingSoftPWM = false
-		if err := pin.pwmWorker.RemovePin(pin); err != nil {
+
+		err := pin.pwmWorker.RemovePin(pin)
+		if err != nil {
 			// this error might be trigger if the software pwm worker is stopped before pins are destroyed
 			pin.logger.Warnf("error while removing the pin from the software pwm worker : %v", err)
 		}
 	}
 
 	if pin.hwPwm != nil {
-		if err := pin.hwPwm.Close(); err != nil {
+		err := pin.hwPwm.Close()
+		if err != nil {
 			return err
 		}
 	}
@@ -321,11 +352,13 @@ func (pin *GPIOPin) Close() error {
 	if pin.line != nil {
 		// If the entire server is shutting down, it's important to turn off all pins so they don't
 		// continue outputting signals we can no longer control.
-		if err := pin.setInternal(false); err != nil { // setInternal won't double-lock the mutex
+		err := pin.setInternal(false)
+		if err != nil { // setInternal won't double-lock the mutex
 			return err
 		}
 
-		if err := pin.closeGpioFd(); err != nil {
+		err = pin.closeGpioFd()
+		if err != nil {
 			return err
 		}
 	}

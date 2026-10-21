@@ -27,10 +27,11 @@ var Model = resource.NewModel("viam-labs", "pinctrl", "rpi5")
 const defaultPWMFreqHz = 800 // default used in pigpio
 
 func init() {
-	gpioMappings, err := gl.GetGPIOBoardMappings(Model.Name, boardInfoMappings)
-	var noBoardErr gl.NoBoardFoundError
-	if errors.As(err, &noBoardErr) {
-		logging.Global().Debugw("Error getting raspi5 GPIO board mapping", "error", err)
+	initLogger := logging.NewLogger("pinctrl-pi5-init")
+	gpioMappings, err := gl.GetGPIOBoardMappings(Model.Name, boardInfoMappings, initLogger)
+
+	if noBoardErr, ok := errors.AsType[gl.NoBoardFoundError](err); ok {
+		initLogger.Debugw("Error getting raspi5 GPIO board mapping", "error", noBoardErr)
 	}
 
 	RegisterBoard(Model.Name, gpioMappings)
@@ -70,6 +71,7 @@ func newBoard(
 	testingMode bool,
 ) (board.Board, error) {
 	var err error
+
 	cancelCtx, cancelFunc := context.WithCancel(context.Background())
 
 	b := &pinctrlpi5{
@@ -129,6 +131,7 @@ func (b *pinctrlpi5) Reconfigure(
 	if err := b.reconfigurePullUpPullDowns(newConf); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -138,7 +141,9 @@ func (b *pinctrlpi5) reconfigurePullUpPullDowns(newConf *Config) error {
 		if !ok {
 			return fmt.Errorf("pin %v could not be found", pullConf.Pin)
 		}
+
 		gpioNum := pin.GPIO
+
 		switch pullConf.Pull {
 		case "none":
 			b.pulls[gpioNum] = pullNoneMode
@@ -174,6 +179,7 @@ func (b *pinctrlpi5) setPulls() {
 
 type pinctrlpi5 struct {
 	resource.Named
+
 	mu sync.Mutex
 
 	gpioMappings map[string]gl.GPIOBoardMapping
@@ -212,6 +218,7 @@ func (b *pinctrlpi5) DigitalInterruptByName(name string) (board.DigitalInterrupt
 	if !ok {
 		return nil, fmt.Errorf("can't find GPIO (%s)", name)
 	}
+
 	if err := gpio.Close(); err != nil {
 		return nil, err
 	}
@@ -220,6 +227,7 @@ func (b *pinctrlpi5) DigitalInterruptByName(name string) (board.DigitalInterrupt
 	if !ok {
 		return nil, fmt.Errorf("can't create digital interrupt on unknown pin %s", name)
 	}
+
 	defaultInterruptConfig := board.DigitalInterruptConfig{
 		Name: name,
 		Pin:  name,
@@ -232,6 +240,7 @@ func (b *pinctrlpi5) DigitalInterruptByName(name string) (board.DigitalInterrupt
 
 	delete(b.gpios, name)
 	b.interrupts[name] = interrupt
+
 	return interrupt, nil
 }
 
@@ -250,6 +259,7 @@ func (b *pinctrlpi5) DigitalInterruptNames() []string {
 	for name := range b.interrupts {
 		names = append(names, name)
 	}
+
 	return names
 }
 
@@ -274,20 +284,23 @@ func (b *pinctrlpi5) SetPowerMode(
 	ctx context.Context,
 	mode pb.PowerMode,
 	duration *time.Duration,
+	extra map[string]any,
 ) error {
 	return grpc.UnimplementedError
 }
 
 // StreamTicks starts a stream of digital interrupt ticks.
 func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.DigitalInterrupt, ch chan board.Tick,
-	extra map[string]interface{},
+	extra map[string]any,
 ) error {
 	var rawInterrupts []*pinctrl.DigitalInterrupt
+
 	for _, i := range interrupts {
 		raw, ok := i.(*pinctrl.DigitalInterrupt)
 		if !ok {
 			return errors.New("cannot stream ticks to an interrupt not associated with this board")
 		}
+
 		rawInterrupts = append(rawInterrupts, raw)
 	}
 
@@ -302,6 +315,7 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 		case <-ctx.Done():
 		case <-b.cancelCtx.Done():
 		}
+
 		for _, i := range rawInterrupts {
 			i.RemoveChannel(ch)
 		}
@@ -313,10 +327,12 @@ func (b *pinctrlpi5) StreamTicks(ctx context.Context, interrupts []board.Digital
 // Close attempts to cleanly close each part of the board.
 func (b *pinctrlpi5) Close(ctx context.Context) error {
 	b.mu.Lock()
+
 	err := b.boardPinCtrl.Close()
 	if err != nil {
 		return fmt.Errorf("trouble cleaning up pincontrol memory: %w", err)
 	}
+
 	b.cancelFunc()
 	b.mu.Unlock()
 	b.activeBackgroundWorkers.Wait()
@@ -324,8 +340,10 @@ func (b *pinctrlpi5) Close(ctx context.Context) error {
 	for _, pin := range b.gpios {
 		err = multierr.Combine(err, pin.Close())
 	}
+
 	for _, interrupt := range b.interrupts {
 		err = multierr.Combine(err, interrupt.Close())
 	}
+
 	return err
 }

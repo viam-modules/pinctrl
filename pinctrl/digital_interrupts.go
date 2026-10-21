@@ -56,6 +56,7 @@ func (ctrl *Pinctrl) NewDigitalInterrupt(
 	if oldInterrupt != nil {
 		oldInterrupt.mu.Lock()
 		defer oldInterrupt.mu.Unlock()
+
 		di.channels = oldInterrupt.channels
 		oldInterrupt.channels = []chan board.Tick{}
 	}
@@ -67,6 +68,7 @@ func (ctrl *Pinctrl) NewDigitalInterrupt(
 func (di *DigitalInterrupt) UpdateConfig(newConfig board.DigitalInterruptConfig) {
 	di.mu.Lock()
 	defer di.mu.Unlock()
+
 	di.config = newConfig
 }
 
@@ -78,11 +80,13 @@ func (di *DigitalInterrupt) Close() error {
 	// lock the mutex for very long, so we'll be able to acquire it quickly here.
 	di.mu.Lock()
 	defer di.mu.Unlock()
+
 	var err error
 	if len(di.channels) > 0 {
 		err = fmt.Errorf("closed digital interrupt %s, but it still had %d listeners",
 			di.config.Name, len(di.channels))
 	}
+
 	return multierr.Combine(err, di.line.Close())
 }
 
@@ -90,16 +94,18 @@ func (di *DigitalInterrupt) Close() error {
 func (di *DigitalInterrupt) Name() string {
 	di.mu.Lock()
 	defer di.mu.Unlock()
+
 	return di.config.Name
 }
 
 // Value gets the current count of interrupt triggers.
 func (di *DigitalInterrupt) Value(
 	ctx context.Context,
-	extra map[string]interface{},
+	extra map[string]any,
 ) (int64, error) {
 	di.mu.Lock()
 	defer di.mu.Unlock()
+
 	return di.count, nil
 }
 
@@ -114,6 +120,7 @@ func (di *DigitalInterrupt) monitor(ctx context.Context) {
 			shouldReturn := func() bool {
 				di.mu.Lock()
 				defer di.mu.Unlock()
+
 				eventTime := event.Time.UnixNano()
 				// check if we should update
 				if di.debounceNanoSeconds != 0 && eventTime-di.lastEvent < di.debounceNanoSeconds {
@@ -140,6 +147,7 @@ func (di *DigitalInterrupt) monitor(ctx context.Context) {
 					case ch <- tick:
 					}
 				}
+
 				return false
 			}() // Execute the anonymous function, then unlock the mutex again
 			if shouldReturn {
@@ -153,6 +161,7 @@ func (di *DigitalInterrupt) monitor(ctx context.Context) {
 func (di *DigitalInterrupt) AddChannel(ch chan board.Tick) {
 	di.mu.Lock()
 	defer di.mu.Unlock()
+
 	di.channels = append(di.channels, ch)
 }
 
@@ -160,6 +169,7 @@ func (di *DigitalInterrupt) AddChannel(ch chan board.Tick) {
 func (di *DigitalInterrupt) RemoveChannel(ch chan board.Tick) {
 	di.mu.Lock()
 	defer di.mu.Unlock()
+
 	for i, oldCh := range di.channels {
 		if ch != oldCh {
 			continue
@@ -169,6 +179,7 @@ func (di *DigitalInterrupt) RemoveChannel(ch chan board.Tick) {
 		lastIndex := len(di.channels) - 1
 		di.channels[i] = di.channels[lastIndex]
 		di.channels = di.channels[:lastIndex]
+
 		break
 	}
 }
@@ -178,13 +189,13 @@ func (di *DigitalInterrupt) RemoveChannel(ch chan board.Tick) {
 
 // Set is an unimplemented placeholder for GPIOPin.Set().
 func (di *DigitalInterrupt) Set(
-	ctx context.Context, isHigh bool, extra map[string]interface{},
+	ctx context.Context, isHigh bool, extra map[string]any,
 ) error {
 	return errors.New("cannot set value of a digital interrupt pin")
 }
 
 // Get reads the current value of the interrupt pin.
-func (di *DigitalInterrupt) Get(ctx context.Context, extra map[string]interface{}) (bool, error) {
+func (di *DigitalInterrupt) Get(ctx context.Context, extra map[string]any) (bool, error) {
 	value, err := di.line.Value()
 	if err != nil {
 		return false, err
@@ -195,27 +206,27 @@ func (di *DigitalInterrupt) Get(ctx context.Context, extra map[string]interface{
 }
 
 // PWM is an unimplemented placeholder for GPIOPin.PWM().
-func (di *DigitalInterrupt) PWM(ctx context.Context, extra map[string]interface{}) (float64, error) {
+func (di *DigitalInterrupt) PWM(ctx context.Context, extra map[string]any) (float64, error) {
 	return 0, errors.New("cannot get PWM of a digital interrupt pin")
 }
 
 // SetPWM is an unimplemented placeholder for GPIOPin.SetPWM().
 func (di *DigitalInterrupt) SetPWM(
-	ctx context.Context, dutyCyclePct float64, extra map[string]interface{},
+	ctx context.Context, dutyCyclePct float64, extra map[string]any,
 ) error {
 	return errors.New("cannot set PWM of a digital interrupt pin")
 }
 
 // PWMFreq is an unimplemented placeholder for GPIOPin.PWMFreq().
 func (di *DigitalInterrupt) PWMFreq(
-	ctx context.Context, extra map[string]interface{},
+	ctx context.Context, extra map[string]any,
 ) (uint, error) {
 	return 0, errors.New("cannot get PWM freq of a digital interrupt pin")
 }
 
 // SetPWMFreq is an unimplemented placeholder for GPIOPin.SetPWMFreq().
 func (di *DigitalInterrupt) SetPWMFreq(
-	ctx context.Context, freqHz uint, extra map[string]interface{},
+	ctx context.Context, freqHz uint, extra map[string]any,
 ) error {
 	return errors.New("cannot set PWM freq of a digital interrupt pin")
 }

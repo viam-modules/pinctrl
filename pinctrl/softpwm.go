@@ -63,6 +63,7 @@ func (p *softPWMPin) calculateTimes() {
 	if p.freqHz <= 0 {
 		p.timeOn = 0
 		p.timeOff = 0
+
 		return
 	}
 
@@ -87,8 +88,10 @@ func (p *softPWMPin) toggle() error {
 		p.pin.mu.Unlock()
 		return nil
 	}
+
 	err := p.pin.setInternal(newState)
 	p.pin.mu.Unlock()
+
 	now := time.Now()
 
 	// regardless of the error returned update the deadline and capture the new state
@@ -119,6 +122,7 @@ func newSoftwarePWMWorker(log logging.Logger) *softwarePWMWorker {
 		logger: log,
 	}
 	w.worker = utils.NewBackgroundStoppableWorkers(w.loop)
+
 	return w
 }
 
@@ -149,29 +153,36 @@ func (w *softwarePWMWorker) loop(ctx context.Context) {
 		sleepDuration, err := func() (time.Duration, error) {
 			for {
 				// if our context has been canceled return early
-				if err := ctx.Err(); err != nil {
+				err := ctx.Err()
+				if err != nil {
 					return 0, err
 				}
+
 				headElem := w.pins.Front()
 				if headElem == nil {
 					return 0, nil
 				}
+
 				headPin := headElem.Value.(*softPWMPin)
 				now := time.Now()
 				// if the deadline is in the future let's sleep a bit
 				if now.Before(headPin.deadline) {
 					return headPin.deadline.Sub(now), nil
 				}
-				if err := headPin.toggle(); err != nil {
+
+				err = headPin.toggle()
+				if err != nil {
 					// this may be very spammy maybe we should ignore?
 					w.logger.Errorf("error %v when changing the state of a pin", err)
 				}
+
 				w.repositionElement(headElem, headPin.deadline)
 			}
 		}()
 		if err != nil {
 			return
 		}
+
 		if sleepDuration == 0 {
 			continue
 		}
@@ -202,9 +213,11 @@ func (w *softwarePWMWorker) repositionElement(elem *list.Element, newDeadline ti
 			if elem.Next() != e {
 				w.pins.MoveBefore(elem, e)
 			}
+
 			return
 		}
 	}
+
 	if elem != w.pins.Back() {
 		w.pins.MoveToBack(elem)
 	}
@@ -218,6 +231,7 @@ func (w *softwarePWMWorker) addPinInternal(pin *GPIOPin, freqHz, dutyCyclePct fl
 			p.freqHz = freqHz
 			p.dutyCyclePct = dutyCyclePct
 			p.calculateTimes()
+
 			return
 		}
 	}
@@ -238,6 +252,7 @@ func (w *softwarePWMWorker) addPinInternal(pin *GPIOPin, freqHz, dutyCyclePct fl
 				return
 			}
 		}
+
 		w.pins.PushBack(pwmPin)
 	}()
 
@@ -250,6 +265,7 @@ func (w *softwarePWMWorker) removePinInternal(pin *GPIOPin) {
 		if p.pin == pin {
 			w.pins.Remove(e)
 			w.count.Add(-1)
+
 			break
 		}
 	}
@@ -269,6 +285,7 @@ func accurateSleep(ctx context.Context, duration time.Duration) bool {
 	// On a raspberry pi 4, naively calling utils.SelectContextOrWait tended to have an error of
 	// about 140-300 microseconds, while this version had an error of 0.3-0.6 microseconds.
 	startTime := time.Now()
+
 	maxBusyWaitTime := 1500 * time.Microsecond
 	if duration > maxBusyWaitTime {
 		shorterDuration := duration - maxBusyWaitTime
@@ -278,11 +295,13 @@ func accurateSleep(ctx context.Context, duration time.Duration) bool {
 	}
 
 	for time.Since(startTime) < duration {
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			return false
 		}
 		// Otherwise, busy-wait some more
 	}
+
 	return true
 }
 
@@ -291,9 +310,11 @@ func (w *softwarePWMWorker) AddPin(pin *GPIOPin, freqHz, dutyCyclePct float64) e
 	if pin == nil {
 		return errors.New("pin cannot be nil")
 	}
+
 	if freqHz <= 0.0 {
 		return fmt.Errorf("frequency should be greater than 0.0 it is : %.3f", freqHz)
 	}
+
 	if dutyCyclePct > 1.0 || dutyCyclePct < 0.0 {
 		return fmt.Errorf("duty cycle should be between 0.0 and 1.0 it is %.3f", dutyCyclePct)
 	}
@@ -306,6 +327,7 @@ func (w *softwarePWMWorker) AddPin(pin *GPIOPin, freqHz, dutyCyclePct float64) e
 	}
 
 	w.opChan <- op
+
 	return nil
 }
 
@@ -321,6 +343,7 @@ func (w *softwarePWMWorker) RemovePin(pin *GPIOPin) error {
 	}
 
 	w.opChan <- op
+
 	return nil
 }
 
