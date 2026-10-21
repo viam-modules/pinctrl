@@ -30,8 +30,8 @@ func init() {
 	initLogger := logging.NewLogger("pinctrl-pi5-init")
 	gpioMappings, err := gl.GetGPIOBoardMappings(Model.Name, boardInfoMappings, initLogger)
 
-	if _, ok := errors.AsType[gl.NoBoardFoundError](err); ok {
-		initLogger.Debugw("Error getting raspi5 GPIO board mapping", "error", err)
+	if noBoardErr, ok := errors.AsType[gl.NoBoardFoundError](err); ok {
+		initLogger.Debugw("Error getting raspi5 GPIO board mapping", "error", noBoardErr)
 	}
 
 	RegisterBoard(Model.Name, gpioMappings)

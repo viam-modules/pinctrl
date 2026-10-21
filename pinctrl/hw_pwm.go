@@ -96,8 +96,7 @@ func newPwmDevice(chipPath string, pwmID, line int, logger logging.Logger, gpioP
 
 func writeValue(filepath string, value uint64, logger logging.Logger) error {
 	logger.Debugf("Writing %d to %s", value, filepath)
-	//nolint:perfsprint
-	data := []byte(fmt.Sprintf("%d", value))
+	data := fmt.Appendf(nil, "%d", value)
 	// The file permissions (the third argument) aren't important: if the file needs to be created,
 	// something has gone horribly wrong!
 	err := os.WriteFile(filepath, data, 0o600)
