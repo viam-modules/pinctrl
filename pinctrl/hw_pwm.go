@@ -252,7 +252,7 @@ func (pwm *pwmDevice) SetPinMode(pinMode byte) error {
 
 	// Get pin's memory contents from virtual page; set the 5th byte of pin to mode
 	altModeIndex := int64(4)
-	vPage := *(pwm.gpioPinsPage)
+	vPage := *pwm.gpioPinsPage
 	vPage[pinAddress+altModeIndex] = pinMode
 
 	return nil

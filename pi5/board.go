@@ -59,7 +59,8 @@ func RegisterBoard(modelName string, gpioMappings map[string]gl.GPIOBoardMapping
 			) (board.Board, error) {
 				return newBoard(ctx, conf, gpioMappings, logger, false)
 			},
-		})
+		},
+	)
 }
 
 // newBoard is the constructor for a Board.
